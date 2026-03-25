@@ -48,9 +48,14 @@ Browser-based Forth debugger running the tf24a DTC Forth interpreter on the cor2
 ```bash
 trunk build                    # Build WASM to dist/
 ./scripts/serve.sh             # Dev server on port 9181
+./scripts/build-pages.sh       # Release build to pages/ for GitHub Pages
 cargo clippy --all-targets --all-features -- -D warnings  # Lint
 cargo fmt --all                # Format
 ```
+
+### Utilities
+
+- `ep2ms` — returns milliseconds since epoch; use for `?ts=` cache-busting on image URLs in README (e.g. `screenshot.png?ts=$(ep2ms)`)
 
 ### Architecture
 
@@ -64,9 +69,15 @@ cargo fmt --all                # Format
 
 - `src/debugger.rs` -- Main debugger component (emulator loop, UI panels)
 - `src/config.rs` -- ForthTier enum (multi-tier assembly) + StackSize
+- `src/demos.rs` -- Demo registry (embedded .fth files)
+- `demos/*.fth` -- Forth demo source files
 - `asm/forth-bootstrap.s` -- Phase 1 tf24a Forth kernel (copied from tf24a)
-- `index.html` -- Entry point with Catppuccin Mocha theme
+- `asm/forth-interpreter.s` -- Phase 4 full interpreter (copied from tf24a)
+- `index.html` -- Entry point with high-contrast dark theme
 - `src/debugger.css` -- Debugger panel styling
+- `build.rs` -- Build script (BUILD_SHA, BUILD_HOST, BUILD_TIMESTAMP)
+- `scripts/build-pages.sh` -- Release build to pages/ for GitHub Pages
+- `.github/workflows/pages.yml` -- Deploy pages/ on push to main
 
 ### COR24 Register Allocation (from tf24a)
 
