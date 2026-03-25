@@ -746,6 +746,25 @@ impl Component for Debugger {
                 <div class="panels">
                     // Output / terminal
                     <div class="output-panel">
+                        // Floating hardware panel (top-right)
+                        <div class="hw-float">
+                            <div class="hw-row">
+                                <span class="hw-label">{"D2"}</span>
+                                <div class={if snap.led & 1 != 0 { "led led-on" } else { "led led-off" }} />
+                            </div>
+                            <div class="hw-row">
+                                <span class="hw-label">{"S2"}</span>
+                                <div class={if self.switch_pressed { "switch switch-on" } else { "switch switch-off" }}
+                                     onclick={ctx.link().callback(|_| Msg::ToggleSwitch)} />
+                            </div>
+                            <div class="hw-sep" />
+                            <div class="hw-stats">
+                                <span class="hw-stat-label">{"Cycles"}</span>
+                                <span class="hw-stat-value">{ format!("{}", snap.cycles) }</span>
+                                <span class="hw-stat-label">{"Instrs"}</span>
+                                <span class="hw-stat-value">{ format!("{}", snap.instructions) }</span>
+                            </div>
+                        </div>
                         <div class="output" ref={self.output_ref.clone()}>{ &self.output }</div>
                         <div class="input-bar">
                             <span class="prompt">{"> "}</span>
@@ -883,29 +902,6 @@ impl Component for Debugger {
                         } else {
                             html! {}
                         }}
-
-                        // Hardware I/O
-                        <div class="panel-section">
-                            <h3>{"Hardware"}</h3>
-                            <div class="hw-panel">
-                                <div class="hw-row">
-                                    <span class="hw-label">{"D2"}</span>
-                                    <div class={if snap.led & 1 != 0 { "led led-on" } else { "led led-off" }} />
-                                </div>
-                                <div class="hw-row">
-                                    <span class="hw-label">{"S2"}</span>
-                                    <div class={if self.switch_pressed { "switch switch-on" } else { "switch switch-off" }}
-                                         onclick={ctx.link().callback(|_| Msg::ToggleSwitch)} />
-                                </div>
-                                <div class="hw-sep" />
-                                <div class="hw-stats">
-                                    <span class="hw-stat-label">{"Cycles"}</span>
-                                    <span class="hw-stat-value">{ format!("{}", snap.cycles) }</span>
-                                    <span class="hw-stat-label">{"Instrs"}</span>
-                                    <span class="hw-stat-value">{ format!("{}", snap.instructions) }</span>
-                                </div>
-                            </div>
-                        </div>
 
                         // Disassembly with breakpoints
                         <div class="panel-section">

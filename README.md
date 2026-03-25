@@ -6,7 +6,7 @@ Type Forth commands, step through threaded code, inspect stacks and registers, a
 
 **[Live Demo](https://sw-vibe-coding.github.io/web-tf24a/)**
 
-![Stack Ops demo running in the debugger](images/screenshot.png)
+![Stack Ops demo running in the debugger](images/screenshot.png?ts=1774477179000)
 
 ## Features
 
