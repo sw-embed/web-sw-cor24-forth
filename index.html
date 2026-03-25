@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tiny Forth — COR24 Debugger</title>
+    <link data-trunk rel="rust" data-bin="web-tf24a" />
+    <link data-trunk rel="css" href="src/debugger.css" />
+    <style>
+        :root {
+            --bg: #1e1e2e;
+            --surface: #282840;
+            --border: #3e3e5e;
+            --text: #cdd6f4;
+            --accent: #89b4fa;
+            --green: #a6e3a1;
+            --red: #f38ba8;
+            --yellow: #f9e2af;
+            --orange: #fab387;
+            --dim: #9399b2;
+            --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--mono);
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        header {
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        header span {
+            font-size: 13px;
+            color: var(--dim);
+        }
+        #app {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+        footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 20px;
+            font-size: 0.75em;
+            color: #6c7086;
+            border-top: 1px solid var(--border);
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+        .footer-sep { color: #444; }
+
+        /* GitHub corner */
+        .github-corner {
+            position: absolute;
+            top: 0;
+            right: 0;
+            z-index: 100;
+        }
+        .github-corner svg {
+            fill: var(--accent);
+            color: var(--bg);
+        }
+        .github-corner:hover .octo-arm {
+            animation: octocat-wave 560ms ease-in-out;
+        }
+        @keyframes octocat-wave {
+            0%, 100% { transform: rotate(0); }
+            20%, 60% { transform: rotate(-25deg); }
+            40%, 80% { transform: rotate(10deg); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+</body>
+</html>
