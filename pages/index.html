@@ -4,10 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tiny Forth — COR24 Debugger</title>
+    <link rel="icon" href="/web-tf24a/favicon-6e8907609e0ae42d.ico" integrity="sha384-TFLQp2uR0x6Hu98cIlQAeRoZ54uf44w6UzGBu8v+yHeUlV0WSldCe8n0S72kiJy4"/>
     
 <script type="module">
-import init, * as bindings from '/web-tf24a/web-tf24a-59aa91b5d0115068.js';
-const wasm = await init({ module_or_path: '/web-tf24a/web-tf24a-59aa91b5d0115068_bg.wasm' });
+import init, * as bindings from '/web-tf24a/web-tf24a-258e65856c64f419.js';
+const wasm = await init({ module_or_path: '/web-tf24a/web-tf24a-258e65856c64f419_bg.wasm' });
 
 
 window.wasmBindings = bindings;
@@ -106,7 +107,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             40%, 80% { transform: rotate(10deg); }
         }
     </style>
-<link rel="modulepreload" href="/web-tf24a/web-tf24a-59aa91b5d0115068.js" crossorigin="anonymous" integrity="sha384-7z6QCO853oYCZDGH9DlbHaEmCV3JqJYE/NNY5J4yOQSRLVROzCESxT/yM3IyEeTR"><link rel="preload" href="/web-tf24a/web-tf24a-59aa91b5d0115068_bg.wasm" crossorigin="anonymous" integrity="sha384-rVvrSiAV2W1+z5/mPYWArD7w+HHX8CMclaBsfrjqBQ/UOEx0TohvDr6qQ0938h/B" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="/web-tf24a/web-tf24a-258e65856c64f419.js" crossorigin="anonymous" integrity="sha384-7z6QCO853oYCZDGH9DlbHaEmCV3JqJYE/NNY5J4yOQSRLVROzCESxT/yM3IyEeTR"><link rel="preload" href="/web-tf24a/web-tf24a-258e65856c64f419_bg.wasm" crossorigin="anonymous" integrity="sha384-ZLZBGN5uZX5zkEeKYcPanre+H+oI6B+WNwuUVw9yiNXT9TgQitR78AdOfpNNbonn" as="fetch" type="application/wasm"></head>
 <body>
     <div id="app"></div>
 </body>
