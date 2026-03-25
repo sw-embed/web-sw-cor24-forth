@@ -38,7 +38,7 @@ _start:
     la r1, 983040       ; r1 = 0x0F0000 return stack base
 
     ; Initialize system variables (r0, r2 free before Phase 1)
-    la r2, entry_quit
+    la r2, entry_bye
     la r0, var_latest_val
     sw r2, 0(r0)        ; LATEST = last dictionary entry
     la r2, dict_end
@@ -1020,16 +1020,14 @@ do_word:
     lbu r0, 0(r0)
     ceq r0, z
     brt word_no_eol
-    ; Clear flag and return empty
+    ; Clear flag and return empty counted string (length=0)
     la r0, word_eol_flag
     lc r2, 0
     sb r2, 0(r0)
     la r0, word_buffer
-    lc r2, 0
-    sb r2, 0(r0)
-    add r1, 3           ; pop IP wait... we haven't pushed buf_ptr yet
-    ; RS: [IP]. Push word_buffer, restore IP, NEXT
-    push r0
+    sb r2, 0(r0)        ; word_buffer[0] = 0 (length)
+    push r0              ; push word_buffer address onto DS
+    ; Restore IP from RS and NEXT (normal WORD return path)
     lw r2, 0(r1)
     add r1, 3
     lw r0, 0(r2)
@@ -1682,14 +1680,38 @@ num_not_done:
 num_ge_0:
     lcu r2, 58           ; '9'+1
     clu r0, r2           ; C = (char <= '9')
-    brt num_is_digit
-    ; Not 0-9, fail for now (no hex support)
+    brf num_try_hex
+    ; Decimal digit 0-9
+    lcu r2, 48
+    sub r0, r2           ; digit = char - '0'
+    bra num_is_digit
+num_try_hex:
+    ; Try A-F
+    lcu r2, 65           ; 'A'
+    clu r0, r2
+    brt num_try_lower    ; char < 'A', try lowercase
+    lcu r2, 71           ; 'F'+1
+    clu r0, r2
+    brf num_try_lower    ; char > 'F', try lowercase
+    lcu r2, 55           ; 'A' - 10
+    sub r0, r2           ; digit = char - 'A' + 10
+    bra num_is_digit
+num_try_lower:
+    lcu r2, 97           ; 'a'
+    clu r0, r2
+    brt num_not_hex      ; char < 'a'
+    lcu r2, 103          ; 'f'+1
+    clu r0, r2
+    brf num_not_hex      ; char > 'f'
+    lcu r2, 87           ; 'a' - 10
+    sub r0, r2           ; digit = char - 'a' + 10
+    bra num_is_digit
+num_not_hex:
     la r0, num_fail
     jmp (r0)
 
 num_is_digit:
-    lcu r2, 48
-    sub r0, r2           ; r0 = digit value (0-9)
+    ; r0 = digit value (0-9 for decimal, 10-15 for hex)
 
     ; acc = acc * BASE + digit
     ; Multiply acc by BASE using repeated addition
@@ -1982,6 +2004,400 @@ do_quit_restart:
     jmp (r0)
 
 ; ============================================================
+; Phase 4b: Debugging and Convenience Words
+; ============================================================
+
+; ------------------------------------------------------------
+; CR ( -- ) : Emit newline
+; ------------------------------------------------------------
+entry_cr:
+    .word entry_quit
+    .byte 2
+    .byte 67, 82            ; "CR"
+do_cr:
+    lc r0, 10
+    push r0
+    la r0, do_emit
+    jmp (r0)
+
+; ------------------------------------------------------------
+; SPACE ( -- ) : Emit space
+; ------------------------------------------------------------
+entry_space:
+    .word entry_cr
+    .byte 5
+    .byte 83, 80, 65, 67, 69 ; "SPACE"
+do_space:
+    lc r0, 32
+    push r0
+    la r0, do_emit
+    jmp (r0)
+
+; ------------------------------------------------------------
+; DECIMAL ( -- ) : Set BASE to 10
+; ------------------------------------------------------------
+entry_decimal:
+    .word entry_space
+    .byte 7
+    .byte 68, 69, 67, 73, 77, 65, 76 ; "DECIMAL"
+do_decimal:
+    add r1, -3
+    sw r2, 0(r1)
+    la r2, var_base_val
+    lc r0, 10
+    sw r0, 0(r2)
+    lw r2, 0(r1)
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
+; HEX ( -- ) : Set BASE to 16
+; ------------------------------------------------------------
+entry_hex:
+    .word entry_decimal
+    .byte 3
+    .byte 72, 69, 88        ; "HEX"
+do_hex:
+    add r1, -3
+    sw r2, 0(r1)
+    la r2, var_base_val
+    lc r0, 16
+    sw r0, 0(r2)
+    lw r2, 0(r1)
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
+; DEPTH ( -- n ) : Push data stack depth
+; Uses mov fp, sp to read sp. depth = (0xFEEC00 - sp) / 3.
+; ------------------------------------------------------------
+entry_depth:
+    .word entry_hex
+    .byte 5
+    .byte 68, 69, 80, 84, 72 ; "DEPTH"
+do_depth:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP. RS: [IP]
+    ; Get sp into r0
+    mov fp, sp
+    push fp
+    pop r0               ; r0 = current sp (push/pop cancel out)
+    ; r0 = sp after we pushed IP. Total bytes = init_sp - r0.
+    ; init_sp = 0xFEEC00 = 16706560
+    add r1, -3
+    sw r0, 0(r1)        ; save sp on RS. RS: [sp_val, IP]
+    la r0, 16706560
+    lw r2, 0(r1)        ; r2 = sp_val
+    add r1, 3           ; pop. RS: [IP]
+    sub r0, r2           ; r0 = total_bytes (including our saved IP)
+    ; Divide r0 by 3 using scratch memory for quotient
+    la r2, depth_scratch
+    push r0              ; save r0 (total_bytes)
+    lc r0, 0
+    sw r0, 0(r2)        ; depth_scratch = 0 (quotient)
+    pop r0               ; restore r0 = total_bytes
+
+depth_div3:
+    lcu r2, 3
+    clu r0, r2           ; C = (r0 < 3)
+    brt depth_div3_done
+    sub r0, r2           ; r0 -= 3
+    ; Increment quotient in scratch
+    push r0              ; save remainder
+    la r0, depth_scratch
+    lw r2, 0(r0)
+    add r2, 1
+    sw r2, 0(r0)
+    pop r0               ; restore remainder
+    bra depth_div3
+
+depth_div3_done:
+    ; Load quotient from scratch
+    la r0, depth_scratch
+    lw r0, 0(r0)        ; depth = total_items
+    push r0              ; DS: [depth]
+    lw r2, 0(r1)
+    add r1, 3
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+depth_scratch:
+    .word 0
+
+; ------------------------------------------------------------
+; .S ( -- ) : Print stack non-destructively
+; Uses mov fp, sp to read sp, then walk EBR with lw r0, 0(fp).
+; Format: <n> val1 val2 ... valn (bottom to top)
+; ------------------------------------------------------------
+entry_dot_s:
+    .word entry_depth
+    .byte 2
+    .byte 46, 83             ; ".S"
+do_dot_s:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP. RS: [IP]
+
+    ; Compute depth (same as DEPTH algorithm)
+    mov fp, sp
+    push fp
+    pop r0               ; r0 = current sp
+    add r1, -3
+    sw r0, 0(r1)        ; save sp_val. RS: [sp_val, IP]
+    la r0, 16706560      ; 0xFEEC00
+    lw r2, 0(r1)
+    add r1, 3
+    sub r0, r2           ; r0 = total bytes
+    ; Divide by 3
+    la r2, depth_scratch
+    push r0
+    lc r0, 0
+    sw r0, 0(r2)
+    pop r0
+dots_div3:
+    lcu r2, 3
+    clu r0, r2
+    brt dots_div3_done
+    sub r0, r2
+    push r0
+    la r0, depth_scratch
+    lw r2, 0(r0)
+    add r2, 1
+    sw r2, 0(r0)
+    pop r0
+    bra dots_div3
+dots_div3_done:
+    la r0, depth_scratch
+    lw r2, 0(r0)        ; r2 = depth
+    add r1, -3
+    sw r2, 0(r1)        ; save depth. RS: [depth, IP]
+
+    ; Print "<depth> "
+    ; Emit '<'
+    lc r0, 60
+    push r0
+    la r2, -65280
+dots_lt_tx:
+    lb r0, 1(r2)
+    cls r0, z
+    brt dots_lt_tx
+    pop r0
+    sb r0, 0(r2)
+    ; Print depth digit (0-9 only for now)
+    lw r0, 0(r1)        ; depth
+    add r0, 48
+    push r0
+dots_n_tx:
+    lb r0, 1(r2)
+    cls r0, z
+    brt dots_n_tx
+    pop r0
+    sb r0, 0(r2)
+    ; Emit '>'
+    lc r0, 62
+    push r0
+dots_gt_tx:
+    lb r0, 1(r2)
+    cls r0, z
+    brt dots_gt_tx
+    pop r0
+    sb r0, 0(r2)
+    ; Emit ' '
+    lc r0, 32
+    push r0
+dots_sp1_tx:
+    lb r0, 1(r2)
+    cls r0, z
+    brt dots_sp1_tx
+    pop r0
+    sb r0, 0(r2)
+
+    ; Print each stack value bottom-to-top using do_dot via thread.
+    ; Bottom of stack is at 0xFEEC00 - 3 = 0xFEEBFD.
+    ; Top of stack is at sp (current).
+    ; Walk from (0xFEEC00 - 3) down to sp, printing each.
+    ; Actually: bottom is highest address, top is lowest.
+    ; Stack grows DOWN: sp starts at 0xFEEC00, first push goes to 0xFEEBFD.
+    ; So bottom-of-stack item is at 0xFEEBFD, and top is at sp.
+    ; Walk from 0xFEEBFD downward to sp.
+    ; Wait: walk from (init_sp - 3) DOWN to current_sp.
+    ; For each address, lw r0, 0(fp) where fp = address.
+
+    lw r0, 0(r1)        ; depth
+    ceq r0, z
+    brt dots_done        ; empty stack
+
+    ; Start address: 0xFEEC00 - 3 = 0xFEEBFD = 16706557
+    la r0, 16706557      ; 0xFEEBFD — bottom of stack
+    add r1, -3
+    sw r0, 0(r1)        ; save walk_ptr. RS: [walk_ptr, depth, IP]
+
+dots_walk:
+    ; Check if we've printed all items
+    lw r0, 3(r1)        ; depth (remaining count)
+    ceq r0, z
+    brt dots_walk_done
+
+    ; Read value at walk_ptr — need fp as base register
+    lw r0, 0(r1)        ; r0 = walk_ptr
+    push r0
+    pop fp               ; fp = walk_ptr
+    lw r0, 0(fp)        ; r0 = stack value at this address
+    push r0              ; push for do_dot
+
+    ; Decrement remaining count
+    lw r0, 3(r1)
+    add r0, -1
+    sw r0, 3(r1)
+
+    ; Advance walk_ptr down by 3
+    lw r0, 0(r1)
+    add r0, -3
+    sw r0, 0(r1)
+
+    ; Call do_dot via thread
+    la r2, dots_dot_thread
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+dots_dot_thread:
+    .word do_dot
+    .word do_dots_continue
+
+do_dots_continue:
+    ; After do_dot returns, loop back
+    ; RS: [walk_ptr, depth, IP]
+    la r0, dots_walk
+    jmp (r0)
+
+dots_walk_done:
+    add r1, 3           ; pop walk_ptr. RS: [depth, IP]
+
+dots_done:
+    add r1, 3           ; pop depth. RS: [IP]
+    lw r2, 0(r1)
+    add r1, 3
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; Walk from LATEST following link fields, print each name.
+; ------------------------------------------------------------
+entry_words:
+    .word entry_dot_s
+    .byte 5
+    .byte 87, 79, 82, 68, 83 ; "WORDS"
+do_words:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP. RS: [IP]
+
+    ; Load LATEST
+    la r0, var_latest_val
+    lw r0, 0(r0)        ; r0 = current entry
+
+words_loop:
+    ceq r0, z
+    brf words_have_entry
+    ; End of dictionary
+    lw r2, 0(r1)
+    add r1, 3
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+words_have_entry:
+    add r1, -3
+    sw r0, 0(r1)        ; save entry ptr. RS: [entry, IP]
+
+    ; Read flags_len at entry+3
+    lbu r2, 3(r0)       ; flags_len
+
+    ; Check HIDDEN (bit 6)
+    push r2              ; save flags_len
+    lcu r0, 64
+    and r0, r2
+    ceq r0, z
+    pop r2               ; restore flags_len
+    brt words_not_hidden
+    ; Hidden: skip
+    la r0, words_next
+    jmp (r0)
+
+words_not_hidden:
+    ; Extract name_len = flags_len & 0x3F
+    lcu r0, 63
+    and r2, r0           ; r2 = name_len
+
+    ; Print name chars at entry+4
+    lw r0, 0(r1)        ; entry
+    add r0, 4           ; r0 = name start
+    add r1, -3
+    sw r0, 0(r1)        ; save name_ptr. RS: [name_ptr, entry, IP]
+    add r1, -3
+    sw r2, 0(r1)        ; save name_len. RS: [name_len, name_ptr, entry, IP]
+
+words_print_char:
+    lw r0, 0(r1)        ; name_len
+    ceq r0, z
+    brt words_print_done
+    lw r0, 3(r1)        ; name_ptr
+    lbu r0, 0(r0)       ; char
+    push r0
+    la r2, -65280
+words_char_tx:
+    lb r0, 1(r2)
+    cls r0, z
+    brt words_char_tx
+    pop r0
+    sb r0, 0(r2)
+    ; Advance
+    lw r0, 3(r1)
+    add r0, 1
+    sw r0, 3(r1)
+    lw r0, 0(r1)
+    add r0, -1
+    sw r0, 0(r1)
+    bra words_print_char
+
+words_print_done:
+    add r1, 6           ; pop name_len, name_ptr. RS: [entry, IP]
+    ; Print space separator
+    lc r0, 32
+    push r0
+    la r2, -65280
+words_sp_tx:
+    lb r0, 1(r2)
+    cls r0, z
+    brt words_sp_tx
+    pop r0
+    sb r0, 0(r2)
+
+words_next:
+    ; Follow link: next = mem[entry]
+    lw r0, 0(r1)        ; entry
+    add r1, 3           ; pop entry. RS: [IP]
+    lw r0, 0(r0)        ; follow link
+    la r2, words_loop
+    jmp (r2)
+
+; ------------------------------------------------------------
+; BYE ( -- ) : Halt the CPU
+; ------------------------------------------------------------
+entry_bye:
+    .word entry_words
+    .byte 3
+    .byte 66, 89, 69        ; "BYE"
+do_bye:
+    bra do_bye
+
+; ============================================================
 ; System Variable Storage
 ; ============================================================
 var_here_val:
@@ -2095,6 +2511,7 @@ test_thread:
     .word do_comma       ; store 10 at HERE, HERE += 3
     .word do_fetch       ; read back from saved address → 10
     .word do_emit        ; emit 10 = '\n'
+    .word do_drop        ; clean up extra HERE value
 
     ; --- Phase 4 Test A: DOT → prints "42 " ---
     .word do_lit

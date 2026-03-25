@@ -1,6 +1,7 @@
 //! Forth debugger component — COR24 emulator with Forth-aware inspection.
 
 use crate::config::{ForthTier, StackSize};
+use crate::demos::DEMOS;
 use cor24_emulator::{AssembledLine, Assembler, EmulatorCore};
 use gloo::timers::callback::Timeout;
 use std::collections::{HashMap, VecDeque};
@@ -65,8 +66,8 @@ pub enum Msg {
     ToggleBreakpoint(u32),
     /// Select a dictionary word for inspection.
     SelectWord(String),
-    /// Run a demo snippet (inject Forth code into REPL).
-    RunDemo(&'static str),
+    /// Load and run a demo by index.
+    LoadDemo(usize),
     /// Toggle hardware switch S2.
     ToggleSwitch,
     /// Switch bottom panel tab.
@@ -106,6 +107,8 @@ pub struct Debugger {
     program_end: u32,
     /// Hardware switch S2 state.
     switch_pressed: bool,
+    /// Currently selected demo index.
+    selected_demo: Option<usize>,
 }
 
 impl Debugger {
@@ -144,6 +147,7 @@ impl Debugger {
         self.uart_rx_queue.clear();
         self.selected_word = None;
         self.switch_pressed = false;
+        self.selected_demo = None;
 
         // Start paused — debugger mode.
         self.running = false;
@@ -428,6 +432,7 @@ impl Component for Debugger {
             bottom_tab: BottomTab::Dictionary,
             program_end: 0,
             switch_pressed: false,
+            selected_demo: None,
         }
     }
 
@@ -577,13 +582,25 @@ impl Component for Debugger {
                 true
             }
 
-            Msg::RunDemo(code) => {
-                for b in code.bytes() {
-                    self.uart_rx_queue.push_back(b);
-                }
-                self.uart_rx_queue.push_back(b'\n');
-
-                if !self.running && !self.halted {
+            Msg::LoadDemo(index) => {
+                if let Some(demo) = DEMOS.get(index) {
+                    self.selected_demo = Some(index);
+                    // Switch tier if needed and reset
+                    self.tier = demo.tier;
+                    self.load_binary(ctx);
+                    // Feed demo source line-by-line into UART
+                    for line in demo.source.lines() {
+                        let trimmed = line.trim();
+                        // Skip empty lines and comments
+                        if trimmed.is_empty() || trimmed.starts_with('\\') {
+                            continue;
+                        }
+                        for b in trimmed.bytes() {
+                            self.uart_rx_queue.push_back(b);
+                        }
+                        self.uart_rx_queue.push_back(b'\n');
+                    }
+                    // Auto-run
                     self.running = true;
                     self.emulator.resume();
                     self.schedule_tick(ctx);
@@ -689,24 +706,23 @@ impl Component for Debugger {
 
                     <span class="tier-desc">{ self.tier.description() }</span>
 
-                    { if !self.tier.demos().is_empty() {
-                        html! {
-                            <span class="demo-buttons">
-                                <span class="demo-label">{"Demos:"}</span>
-                                { for self.tier.demos().iter().map(|(label, code)| {
-                                    let code = *code;
-                                    html! {
-                                        <button class="demo-btn"
-                                            onclick={ctx.link().callback(move |_| Msg::RunDemo(code))}>
-                                            { label }
-                                        </button>
-                                    }
-                                })}
-                            </span>
-                        }
-                    } else {
-                        html! {}
-                    }}
+                    <select class="demo-select" onchange={ctx.link().callback(|e: Event| {
+                        let select: HtmlInputElement = e.target_unchecked_into();
+                        let idx: usize = select.value().parse().unwrap_or(usize::MAX);
+                        Msg::LoadDemo(idx)
+                    })}>
+                        <option value="" selected={self.selected_demo.is_none()}>
+                            {"Demo..."}
+                        </option>
+                        { for DEMOS.iter().enumerate().map(|(i, demo)| {
+                            let sel = self.selected_demo == Some(i);
+                            html! {
+                                <option value={i.to_string()} selected={sel}>
+                                    { &demo.title }
+                                </option>
+                            }
+                        })}
+                    </select>
                 </div>
 
                 // Memory map bar

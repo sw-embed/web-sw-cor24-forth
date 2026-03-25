@@ -1,5 +1,6 @@
 pub mod config;
 pub mod debugger;
+pub mod demos;
 
 use debugger::Debugger;
 use yew::prelude::*;
@@ -41,6 +42,12 @@ pub fn app() -> Html {
                 <span>{"\u{00a9} 2026 Michael A Wright"}</span>
                 <span class="footer-sep">{"\u{00b7}"}</span>
                 <a href="https://makerlisp.com" target="_blank">{"COR24-TB"}</a>
+                <span class="footer-sep">{"\u{00b7}"}</span>
+                <span>{env!("BUILD_SHA")}</span>
+                <span class="footer-sep">{"\u{00b7}"}</span>
+                <span>{env!("BUILD_HOST")}</span>
+                <span class="footer-sep">{"\u{00b7}"}</span>
+                <span>{env!("BUILD_TIMESTAMP")}</span>
             </footer>
         </>
     }

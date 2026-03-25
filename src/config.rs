@@ -21,7 +21,7 @@ impl ForthTier {
     pub fn description(self) -> &'static str {
         match self {
             Self::Bootstrap => "Phase 1: UART I/O, data/return stack tests, EMIT, KEY",
-            Self::Interpreter => "Phase 4: Interactive Forth REPL with LED!, DOT, NUMBER",
+            Self::Interpreter => "Phase 4: REPL with LED!, .S, HEX, WORDS, BYE",
         }
     }
 
@@ -29,19 +29,6 @@ impl ForthTier {
         match self {
             Self::Bootstrap => include_str!("../asm/forth-bootstrap.s"),
             Self::Interpreter => include_str!("../asm/forth-interpreter.s"),
-        }
-    }
-
-    /// Demo snippets available for this tier.
-    pub fn demos(self) -> &'static [(&'static str, &'static str)] {
-        match self {
-            Self::Bootstrap => &[],
-            Self::Interpreter => &[
-                ("1 LED!", "1 LED!"),
-                ("0 LED!", "0 LED!"),
-                ("2 3 + .", "2 3 + ."),
-                ("1 2 3 . . .", "1 2 3 . . ."),
-            ],
         }
     }
 
