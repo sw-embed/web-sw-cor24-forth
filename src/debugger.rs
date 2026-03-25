@@ -18,7 +18,7 @@ const CELL: u32 = 3;
 
 /// Bottom panel tab selection.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum BottomTab {
+pub enum BottomTab {
     Dictionary,
     CompileLog,
 }
@@ -65,8 +65,11 @@ pub enum Msg {
     ToggleBreakpoint(u32),
     /// Select a dictionary word for inspection.
     SelectWord(String),
-    /// Switch bottom panel tab (internal).
-    #[allow(private_interfaces)]
+    /// Run a demo snippet (inject Forth code into REPL).
+    RunDemo(&'static str),
+    /// Toggle hardware switch S2.
+    ToggleSwitch,
+    /// Switch bottom panel tab.
     SetBottomTab(BottomTab),
 }
 
@@ -101,6 +104,8 @@ pub struct Debugger {
     bottom_tab: BottomTab,
     /// Program extent (end of assembled code).
     program_end: u32,
+    /// Hardware switch S2 state.
+    switch_pressed: bool,
 }
 
 impl Debugger {
@@ -138,6 +143,7 @@ impl Debugger {
         self.prev_pc = 0;
         self.uart_rx_queue.clear();
         self.selected_word = None;
+        self.switch_pressed = false;
 
         // Start paused — debugger mode.
         self.running = false;
@@ -421,6 +427,7 @@ impl Component for Debugger {
             selected_word: None,
             bottom_tab: BottomTab::Dictionary,
             program_end: 0,
+            switch_pressed: false,
         }
     }
 
@@ -570,6 +577,26 @@ impl Component for Debugger {
                 true
             }
 
+            Msg::RunDemo(code) => {
+                for b in code.bytes() {
+                    self.uart_rx_queue.push_back(b);
+                }
+                self.uart_rx_queue.push_back(b'\n');
+
+                if !self.running && !self.halted {
+                    self.running = true;
+                    self.emulator.resume();
+                    self.schedule_tick(ctx);
+                }
+                true
+            }
+
+            Msg::ToggleSwitch => {
+                self.switch_pressed = !self.switch_pressed;
+                self.emulator.set_button_pressed(self.switch_pressed);
+                true
+            }
+
             Msg::SelectWord(name) => {
                 if self.selected_word.as_ref() == Some(&name) {
                     self.selected_word = None; // toggle off
@@ -629,6 +656,7 @@ impl Component for Debugger {
                         let select: HtmlInputElement = e.target_unchecked_into();
                         let tier = match select.value().as_str() {
                             "Bootstrap" => ForthTier::Bootstrap,
+                            "Interpreter" => ForthTier::Interpreter,
                             _ => ForthTier::Bootstrap,
                         };
                         Msg::SetTier(tier)
@@ -660,6 +688,25 @@ impl Component for Debugger {
                     </select>
 
                     <span class="tier-desc">{ self.tier.description() }</span>
+
+                    { if !self.tier.demos().is_empty() {
+                        html! {
+                            <span class="demo-buttons">
+                                <span class="demo-label">{"Demos:"}</span>
+                                { for self.tier.demos().iter().map(|(label, code)| {
+                                    let code = *code;
+                                    html! {
+                                        <button class="demo-btn"
+                                            onclick={ctx.link().callback(move |_| Msg::RunDemo(code))}>
+                                            { label }
+                                        </button>
+                                    }
+                                })}
+                            </span>
+                        }
+                    } else {
+                        html! {}
+                    }}
                 </div>
 
                 // Memory map bar
@@ -821,21 +868,26 @@ impl Component for Debugger {
                             html! {}
                         }}
 
-                        // LED + status
+                        // Hardware I/O
                         <div class="panel-section">
                             <h3>{"Hardware"}</h3>
-                            <div class="registers">
-                                <span class="reg-name">{"LED"}</span>
-                                <span class="reg-value">
-                                    <span class={classes!(
-                                        "led",
-                                        (snap.led != 0).then_some("on")
-                                    )}></span>
-                                </span>
-                                <span class="reg-name">{"Cycles"}</span>
-                                <span class="reg-value">{ format!("{}", snap.cycles) }</span>
-                                <span class="reg-name">{"Instrs"}</span>
-                                <span class="reg-value">{ format!("{}", snap.instructions) }</span>
+                            <div class="hw-panel">
+                                <div class="hw-row">
+                                    <span class="hw-label">{"D2"}</span>
+                                    <div class={if snap.led & 1 != 0 { "led led-on" } else { "led led-off" }} />
+                                </div>
+                                <div class="hw-row">
+                                    <span class="hw-label">{"S2"}</span>
+                                    <div class={if self.switch_pressed { "switch switch-on" } else { "switch switch-off" }}
+                                         onclick={ctx.link().callback(|_| Msg::ToggleSwitch)} />
+                                </div>
+                                <div class="hw-sep" />
+                                <div class="hw-stats">
+                                    <span class="hw-stat-label">{"Cycles"}</span>
+                                    <span class="hw-stat-value">{ format!("{}", snap.cycles) }</span>
+                                    <span class="hw-stat-label">{"Instrs"}</span>
+                                    <span class="hw-stat-value">{ format!("{}", snap.instructions) }</span>
+                                </div>
                             </div>
                         </div>
 

@@ -6,28 +6,46 @@
 pub enum ForthTier {
     /// Phase 1: Bootstrap, UART I/O, stack tests
     Bootstrap,
+    /// Phase 4: Full interpreter with LED!, DOT, NUMBER, QUIT loop
+    Interpreter,
 }
 
 impl ForthTier {
     pub fn label(self) -> &'static str {
         match self {
             Self::Bootstrap => "Bootstrap",
+            Self::Interpreter => "Interpreter",
         }
     }
 
     pub fn description(self) -> &'static str {
         match self {
             Self::Bootstrap => "Phase 1: UART I/O, data/return stack tests, EMIT, KEY",
+            Self::Interpreter => "Phase 4: Interactive Forth REPL with LED!, DOT, NUMBER",
         }
     }
 
     pub fn assembly(self) -> &'static str {
         match self {
             Self::Bootstrap => include_str!("../asm/forth-bootstrap.s"),
+            Self::Interpreter => include_str!("../asm/forth-interpreter.s"),
         }
     }
 
-    pub const ALL: [ForthTier; 1] = [Self::Bootstrap];
+    /// Demo snippets available for this tier.
+    pub fn demos(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Self::Bootstrap => &[],
+            Self::Interpreter => &[
+                ("1 LED!", "1 LED!"),
+                ("0 LED!", "0 LED!"),
+                ("2 3 + .", "2 3 + ."),
+                ("1 2 3 . . .", "1 2 3 . . ."),
+            ],
+        }
+    }
+
+    pub const ALL: [ForthTier; 2] = [Self::Bootstrap, Self::Interpreter];
 }
 
 /// Stack size configuration for the COR24 EBR region.
