@@ -56,6 +56,24 @@
     margin-left: 4px;
 }
 
+/* Memory map */
+.memory-map {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.memory-map-label {
+    font-size: 10px;
+    color: var(--dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
 /* Main panels */
 .panels {
     flex: 1;
@@ -87,7 +105,7 @@
 
 /* Side panel (registers, stacks) */
 .side-panel {
-    width: 320px;
+    width: 380px;
     flex-shrink: 0;
     overflow-y: auto;
     padding: 12px;
@@ -164,6 +182,32 @@
     font-size: 11px;
 }
 
+/* Caller chain */
+.caller-chain {
+    font-size: 12px;
+}
+
+.caller-entry {
+    display: flex;
+    gap: 8px;
+    padding: 1px 0;
+}
+
+.caller-depth {
+    color: var(--dim);
+    min-width: 16px;
+}
+
+.caller-name {
+    color: var(--accent);
+    flex: 1;
+}
+
+.caller-addr {
+    color: var(--dim);
+    font-size: 11px;
+}
+
 /* Status bar */
 .status-bar {
     display: flex;
@@ -236,6 +280,7 @@
     border-radius: 3px;
     overflow: hidden;
     font-size: 9px;
+    flex: 1;
 }
 
 .region-bar .region {
@@ -245,6 +290,7 @@
     color: var(--bg);
     font-weight: 600;
     min-width: 2px;
+    transition: width 0.3s;
 }
 
 .region-bar .region-kernel { background: #585b70; }
@@ -259,16 +305,51 @@
     line-height: 1.6;
 }
 
+.disasm-label {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 4px 0;
+    opacity: 0.7;
+}
+
 .disasm-line {
     display: flex;
-    gap: 10px;
+    gap: 6px;
     padding: 1px 4px;
     border-radius: 2px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.disasm-line:hover {
+    background: rgba(255, 255, 255, 0.04);
 }
 
 .disasm-line.disasm-current {
     background: rgba(137, 180, 250, 0.15);
     color: var(--accent);
+}
+
+.disasm-line.disasm-breakpoint .disasm-bp-gutter {
+    color: var(--red);
+}
+
+.disasm-bp-gutter {
+    width: 10px;
+    flex-shrink: 0;
+    text-align: center;
+    color: transparent;
+    font-size: 10px;
+    line-height: 1.6;
+}
+
+.disasm-line:hover .disasm-bp-gutter {
+    color: var(--dim);
+}
+
+.disasm-line.disasm-breakpoint .disasm-bp-gutter {
+    color: var(--red);
 }
 
 .disasm-addr {
@@ -294,4 +375,178 @@
 .toolbar button:disabled {
     opacity: 0.4;
     cursor: not-allowed;
+}
+
+/* Bottom tab panel */
+.bottom-tabs {
+    padding: 0;
+}
+
+.tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+}
+
+.tab-btn {
+    background: transparent;
+    color: var(--dim);
+    border: none;
+    padding: 6px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.tab-btn:hover {
+    color: var(--text);
+}
+
+.tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+/* Dictionary panel */
+.dict-panel {
+    padding: 8px;
+}
+
+.dict-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.dict-entry {
+    display: flex;
+    gap: 8px;
+    padding: 2px 4px;
+    border-radius: 2px;
+    cursor: pointer;
+    font-size: 12px;
+    align-items: center;
+}
+
+.dict-entry:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.dict-entry.dict-selected {
+    background: rgba(137, 180, 250, 0.15);
+}
+
+.dict-addr {
+    color: var(--dim);
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.dict-name {
+    color: var(--text);
+    flex: 1;
+}
+
+.dict-kind {
+    font-size: 10px;
+    padding: 0 4px;
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+
+.dict-primitive .dict-kind {
+    color: var(--green);
+}
+
+.dict-colon .dict-kind {
+    color: var(--accent);
+}
+
+.dict-thread .dict-kind {
+    color: var(--orange);
+}
+
+/* Word inspector */
+.word-inspector {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+}
+
+.word-inspector h4 {
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+.word-thread, .prim-disasm {
+    font-size: 12px;
+}
+
+.thread-entry {
+    display: flex;
+    gap: 8px;
+    padding: 1px 4px;
+}
+
+.thread-addr {
+    color: var(--dim);
+    flex-shrink: 0;
+}
+
+.thread-name {
+    color: var(--text);
+}
+
+.word-inspector-empty {
+    padding: 12px 8px;
+    color: var(--dim);
+    font-size: 12px;
+    font-style: italic;
+}
+
+/* Compile log */
+.compile-log {
+    padding: 8px;
+    max-height: 300px;
+    overflow-y: auto;
+    font-size: 11px;
+}
+
+.log-line {
+    display: flex;
+    gap: 8px;
+    padding: 1px 4px;
+    line-height: 1.5;
+}
+
+.log-line.log-label-line {
+    margin-top: 4px;
+}
+
+.log-addr {
+    color: var(--dim);
+    flex-shrink: 0;
+    min-width: 48px;
+}
+
+.log-bytes {
+    color: var(--yellow);
+    flex-shrink: 0;
+    min-width: 110px;
+    font-size: 10px;
+}
+
+.log-source {
+    color: var(--text);
+    white-space: pre;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.log-label-line .log-source {
+    color: var(--accent);
 }
