@@ -175,6 +175,10 @@ impl Debugger {
         let rsp = self.emulator.snapshot().regs[1]; // r1 = RSP
         let rstack_base: u32 = 0x0F0000;
         let mut cells = Vec::new();
+        // Only walk when RSP has been initialized to the return stack region
+        if rsp == 0 || rsp >= rstack_base {
+            return cells;
+        }
         let mut addr = rstack_base;
         while addr > rsp && cells.len() < 64 {
             addr -= CELL;
@@ -319,17 +323,25 @@ impl Debugger {
         let pfa = cfa_addr + CELL; // PFA = CFA + 3
         let mut thread = Vec::new();
         let mut addr = pfa;
+        let mut next_is_literal = false;
 
         for _ in 0..32 {
             let word_addr = self.emulator.read_word(addr) & 0xFFFFFF;
-            let name = self.resolve_addr(word_addr);
-            thread.push((word_addr, name.clone()));
-            addr += CELL;
+            if next_is_literal {
+                // After do_lit / do_branch / do_zbranch, the next cell is a value, not a CFA
+                thread.push((word_addr, format!("{}", word_addr)));
+                next_is_literal = false;
+            } else {
+                let name = self.resolve_addr(word_addr);
+                next_is_literal = name == "do_lit" || name == "do_branch" || name == "do_zbranch";
+                thread.push((word_addr, name.clone()));
 
-            // Stop after do_exit or do_halt
-            if name == "do_exit" || name == "do_halt" {
-                break;
+                // Stop after do_exit or do_halt
+                if name == "do_exit" || name == "do_halt" {
+                    break;
+                }
             }
+            addr += CELL;
         }
         thread
     }
@@ -339,6 +351,10 @@ impl Debugger {
         let rsp = self.emulator.snapshot().regs[1];
         let rstack_base: u32 = 0x0F0000;
         let mut chain = Vec::new();
+        // Only walk when RSP has been initialized to the return stack region
+        if rsp == 0 || rsp >= rstack_base {
+            return chain;
+        }
         let mut addr = rstack_base;
 
         while addr > rsp && chain.len() < 16 {
