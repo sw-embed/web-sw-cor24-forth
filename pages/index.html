@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tiny Forth — COR24 Debugger</title>
+    
+<script type="module">
+import init, * as bindings from '/web-tf24a/web-tf24a-daf7da1c43370ebe.js';
+const wasm = await init({ module_or_path: '/web-tf24a/web-tf24a-daf7da1c43370ebe_bg.wasm' });
+
+
+window.wasmBindings = bindings;
+
+
+dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
+
+</script>
+    <link rel="stylesheet" href="/web-tf24a/debugger-9fc4b747a14aa78d.css" integrity="sha384-6I2GVteZ9PfcIxQKa1HE/oax0QWCsf778G6H3CGWjhZ/QKlxyqxc/ygUh9tFJoni"/>
+    <style>
+        :root {
+            --bg: #111122;
+            --surface: #1a1a33;
+            --border: #333366;
+            --text: #f0f0ff;
+            --accent: #66ccff;
+            --green: #44ff88;
+            --red: #ff5577;
+            --yellow: #ffdd44;
+            --orange: #ffaa33;
+            --dim: #99aacc;
+            --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--mono);
+            font-size: 15px;
+            background: var(--bg);
+            color: var(--text);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        header {
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+        }
+        header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--accent);
+        }
+        header span {
+            font-size: 15px;
+            color: var(--dim);
+        }
+        #app {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+        footer {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 20px;
+            font-size: 0.85em;
+            color: var(--dim);
+            border-top: 1px solid var(--border);
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        footer a:hover {
+            text-decoration: underline;
+        }
+        .footer-sep { color: var(--border); }
+
+        /* GitHub corner */
+        .github-corner {
+            position: absolute;
+            top: 0;
+            right: 0;
+            z-index: 100;
+        }
+        .github-corner svg {
+            fill: var(--accent);
+            color: var(--bg);
+        }
+        .github-corner:hover .octo-arm {
+            animation: octocat-wave 560ms ease-in-out;
+        }
+        @keyframes octocat-wave {
+            0%, 100% { transform: rotate(0); }
+            20%, 60% { transform: rotate(-25deg); }
+            40%, 80% { transform: rotate(10deg); }
+        }
+    </style>
+<link rel="modulepreload" href="/web-tf24a/web-tf24a-daf7da1c43370ebe.js" crossorigin="anonymous" integrity="sha384-7z6QCO853oYCZDGH9DlbHaEmCV3JqJYE/NNY5J4yOQSRLVROzCESxT/yM3IyEeTR"><link rel="preload" href="/web-tf24a/web-tf24a-daf7da1c43370ebe_bg.wasm" crossorigin="anonymous" integrity="sha384-DAzB+gmXvzSuv0dSwFzzzO9ptEN67BCY/yGaxy5/O3Uox/eZdKJnrkslXPH0LbZG" as="fetch" type="application/wasm"></head>
+<body>
+    <div id="app"></div>
+</body>
+</html>
