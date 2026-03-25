@@ -101,6 +101,7 @@
     overflow: hidden;
     min-height: 0;
     border-right: 1px solid var(--border);
+    position: relative;
 }
 
 .output-panel .output {
@@ -245,8 +246,16 @@
     color: var(--text);
 }
 
-/* Hardware I/O panel */
-.hw-panel {
+/* Floating hardware panel (top-right of output) */
+.hw-float {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 10;
+    background: rgba(17, 17, 34, 0.85);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
     display: flex;
     flex-direction: column;
     gap: 8px;
