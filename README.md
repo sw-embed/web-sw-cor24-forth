@@ -16,7 +16,7 @@ Type Forth commands, step through threaded code, inspect stacks and registers, a
 - **Hardware I/O panel**: visual LED D2 (glows red when lit) and clickable Switch S2
 - **Inspection panels**: CPU registers (with change highlighting), data stack, return stack, caller chain, disassembly, dictionary browser, word inspector, compile log
 - **Memory map**: visual bar showing kernel, free, return stack, and data stack regions
-- **Multi-tier assembly**: Bootstrap (Phase 1) and Interpreter (Phase 4: LED!, .S, HEX, WORDS, BYE)
+- **Multi-tier assembly**: Bootstrap (Phase 1) and Interpreter (Phase 4: D2_ON!/D2_OFF!, .S, HEX, WORDS, BYE)
 - **Configurable stack**: 3 KB (hardware default) or 8 KB (full EBR window)
 
 ## Related

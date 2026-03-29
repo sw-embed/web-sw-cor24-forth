@@ -3,6 +3,8 @@
 use crate::config::{ForthTier, StackSize};
 use crate::demos::DEMOS;
 use cor24_emulator::{AssembledLine, Assembler, EmulatorCore};
+use gloo::file::callbacks::FileReader;
+use gloo::file::File;
 use gloo::timers::callback::Timeout;
 use std::collections::{HashMap, VecDeque};
 use web_sys::{HtmlElement, HtmlInputElement};
@@ -70,8 +72,20 @@ pub enum Msg {
     LoadDemo(usize),
     /// Toggle hardware switch S2.
     ToggleSwitch,
+    /// User selected a .fth file to upload.
+    FileChanged(Event),
+    /// Preview file contents before running.
+    LoadFile(String),
+    /// Run the previewed file.
+    RunFile,
+    /// Cancel file preview.
+    CancelFile,
     /// Switch bottom panel tab.
     SetBottomTab(BottomTab),
+    /// Toggle about dialog visibility.
+    ToggleAbout,
+    /// Toggle history dialog visibility.
+    ToggleHistory,
 }
 
 pub struct Debugger {
@@ -105,14 +119,38 @@ pub struct Debugger {
     bottom_tab: BottomTab,
     /// Program extent (end of assembled code).
     program_end: u32,
+    /// True when interpreter is spinning in UART RX poll (waiting for input).
+    waiting_for_input: bool,
+    /// Addresses of UART RX busy-wait loops (for idle detection).
+    uart_poll_addrs: Vec<u32>,
+    /// Whether the About dialog is visible.
+    show_about: bool,
+    /// Whether the History dialog is visible.
+    show_history: bool,
+    /// File/demo contents pending preview/run. (title, source)
+    pending_preview: Option<(String, String)>,
+    /// Command history for up-arrow recall (user-typed only).
+    history: Vec<String>,
+    /// Full session log for History dialog (includes demos/files).
+    full_log: Vec<String>,
+    /// Current position in history (-1 = new input).
+    history_pos: isize,
+    /// Saved current input when browsing history.
+    history_saved: String,
     /// Hardware switch S2 state.
     switch_pressed: bool,
     /// Currently selected demo index.
     selected_demo: Option<usize>,
+    /// File reader handle (kept alive to prevent cancel).
+    _file_reader: Option<FileReader>,
+    /// Ref to the main input field for auto-focus.
+    input_ref: NodeRef,
+    /// Ref to hidden file input for upload.
+    file_input_ref: NodeRef,
 }
 
 impl Debugger {
-    fn load_binary(&mut self, _ctx: &Context<Self>) {
+    fn load_binary(&mut self, ctx: &Context<Self>) {
         let mut asm = Assembler::new();
         let result = asm.assemble(self.tier.assembly());
 
@@ -146,12 +184,24 @@ impl Debugger {
         self.prev_pc = 0;
         self.uart_rx_queue.clear();
         self.selected_word = None;
+        self.waiting_for_input = false;
+        self.uart_poll_addrs = ["key_poll", "word_skip_rx", "word_skip_rx2", "word_read_rx", "word_read_rx2"]
+            .iter()
+            .filter_map(|name| self.labels.get(*name).copied())
+            .collect();
         self.switch_pressed = false;
         self.selected_demo = None;
 
-        // Start paused — debugger mode.
-        self.running = false;
-        self.emulator.pause();
+        // Auto-run the interpreter tier (needs to boot through test code).
+        // Bootstrap stays paused for debugging.
+        if self.tier == ForthTier::Interpreter {
+            self.running = true;
+            self.emulator.resume();
+            self.schedule_tick(ctx);
+        } else {
+            self.running = false;
+            self.emulator.pause();
+        }
     }
 
     fn schedule_tick(&mut self, ctx: &Context<Self>) {
@@ -246,12 +296,15 @@ impl Debugger {
         }
     }
 
-    /// Collect UART output and auto-scroll.
-    fn collect_uart_output(&mut self) {
+    /// Collect UART output and auto-scroll. Returns true if there was new output.
+    fn collect_uart_output(&mut self) -> bool {
         let uart = self.emulator.get_uart_output();
         if !uart.is_empty() {
             self.output.push_str(uart);
             self.emulator.clear_uart_output();
+            true
+        } else {
+            false
         }
     }
 
@@ -413,7 +466,7 @@ impl Component for Debugger {
         ctx.link().send_message(Msg::Init);
         Self {
             emulator: EmulatorCore::new(),
-            tier: ForthTier::Bootstrap,
+            tier: ForthTier::Interpreter,
             stack_size: StackSize::ThreeKb,
             output: String::new(),
             input: String::new(),
@@ -431,8 +484,20 @@ impl Component for Debugger {
             selected_word: None,
             bottom_tab: BottomTab::Dictionary,
             program_end: 0,
+            waiting_for_input: false,
+            uart_poll_addrs: Vec::new(),
+            show_about: false,
+            show_history: false,
+            pending_preview: None,
+            history: Vec::new(),
+            full_log: Vec::new(),
+            history_pos: -1,
+            history_saved: String::new(),
             switch_pressed: false,
             selected_demo: None,
+            _file_reader: None,
+            input_ref: NodeRef::default(),
+            file_input_ref: NodeRef::default(),
         }
     }
 
@@ -453,7 +518,18 @@ impl Component for Debugger {
                 self.feed_uart_byte();
 
                 let result = self.emulator.run_batch(BATCH_SIZE);
-                self.collect_uart_output();
+                let had_output = self.collect_uart_output();
+
+                // Detect when interpreter is idle in a UART poll loop (waiting for input).
+                let pc = self.emulator.snapshot().pc;
+                let was_waiting = self.waiting_for_input;
+                self.waiting_for_input = matches!(result.reason, cor24_emulator::StopReason::CycleLimit)
+                    && self.uart_poll_addrs.iter().any(|&addr| pc >= addr && pc < addr + 16);
+
+                // Clear boot output on first transition to ready.
+                if self.waiting_for_input && !was_waiting && self.uart_rx_queue.is_empty() {
+                    self.output.clear();
+                }
 
                 if self.emulator.is_halted() {
                     self.running = false;
@@ -463,6 +539,11 @@ impl Component for Debugger {
                     self.emulator.pause();
                 } else if self.running {
                     self.schedule_tick(ctx);
+                }
+
+                // Skip re-render when idle in KEY with nothing new to show.
+                if self.waiting_for_input && was_waiting && !had_output {
+                    return false;
                 }
 
                 true
@@ -477,11 +558,22 @@ impl Component for Debugger {
                 if self.input.is_empty() {
                     return false;
                 }
+                // If interpreter hasn't reached input loop yet, warn user.
+                if self.running && !self.waiting_for_input {
+                    self.output.push_str("[input queued — interpreter busy]\n");
+                }
+                // Save to history (both input recall and full log).
+                self.history.push(self.input.clone());
+                self.full_log.push(self.input.clone());
+                self.history_pos = -1;
+                self.history_saved.clear();
+
                 for b in self.input.bytes() {
                     self.uart_rx_queue.push_back(b);
                 }
                 self.uart_rx_queue.push_back(b'\n');
                 self.input.clear();
+                self.waiting_for_input = false;
 
                 if !self.running && !self.halted {
                     self.running = true;
@@ -567,8 +659,37 @@ impl Component for Debugger {
             }
 
             Msg::InputKeyDown(e) => {
-                if e.key() == "Enter" {
-                    ctx.link().send_message(Msg::SendInput);
+                match e.key().as_str() {
+                    "Enter" => {
+                        ctx.link().send_message(Msg::SendInput);
+                    }
+                    "ArrowUp" => {
+                        e.prevent_default();
+                        if !self.history.is_empty() {
+                            if self.history_pos == -1 {
+                                self.history_saved = self.input.clone();
+                                self.history_pos = self.history.len() as isize - 1;
+                            } else if self.history_pos > 0 {
+                                self.history_pos -= 1;
+                            }
+                            self.input = self.history[self.history_pos as usize].clone();
+                            return true;
+                        }
+                    }
+                    "ArrowDown" => {
+                        e.prevent_default();
+                        if self.history_pos >= 0 {
+                            self.history_pos += 1;
+                            if self.history_pos >= self.history.len() as isize {
+                                self.history_pos = -1;
+                                self.input = self.history_saved.clone();
+                            } else {
+                                self.input = self.history[self.history_pos as usize].clone();
+                            }
+                            return true;
+                        }
+                    }
+                    _ => {}
                 }
                 false
             }
@@ -585,26 +706,68 @@ impl Component for Debugger {
             Msg::LoadDemo(index) => {
                 if let Some(demo) = DEMOS.get(index) {
                     self.selected_demo = Some(index);
-                    // Switch tier if needed and reset
-                    self.tier = demo.tier;
+                    self.pending_preview = Some((
+                        format!("Demo: {}", demo.title),
+                        demo.source.to_string(),
+                    ));
+                }
+                true
+            }
+
+            Msg::FileChanged(e) => {
+                let input: HtmlInputElement = e.target_unchecked_into();
+                if let Some(file_list) = input.files()
+                    && let Some(file) = file_list.get(0)
+                {
+                    let file = File::from(file);
+                    let link = ctx.link().clone();
+                    let reader = gloo::file::callbacks::read_as_text(&file, move |result| {
+                        if let Ok(text) = result {
+                            link.send_message(Msg::LoadFile(text));
+                        }
+                    });
+                    self._file_reader = Some(reader);
+                }
+                // Reset the input so the same file can be re-selected
+                input.set_value("");
+                false
+            }
+
+            Msg::LoadFile(contents) => {
+                self.pending_preview = Some(("Uploaded File".to_string(), contents));
+                true
+            }
+
+            Msg::RunFile => {
+                if let Some((title, contents)) = self.pending_preview.take() {
+                    self.selected_demo = None;
+                    if self.tier != ForthTier::Interpreter {
+                        self.tier = ForthTier::Interpreter;
+                    }
                     self.load_binary(ctx);
-                    // Feed demo source line-by-line into UART
-                    for line in demo.source.lines() {
+                    // Log to full session log and input history
+                    self.full_log.push(format!("\\ --- {} ---", title));
+                    for line in contents.lines() {
                         let trimmed = line.trim();
-                        // Skip empty lines and comments
-                        if trimmed.is_empty() || trimmed.starts_with('\\') {
+                        if trimmed.is_empty() {
                             continue;
                         }
+                        self.full_log.push(trimmed.to_string());
+                        self.history.push(trimmed.to_string());
                         for b in trimmed.bytes() {
                             self.uart_rx_queue.push_back(b);
                         }
                         self.uart_rx_queue.push_back(b'\n');
                     }
-                    // Auto-run
                     self.running = true;
                     self.emulator.resume();
                     self.schedule_tick(ctx);
                 }
+                true
+            }
+
+            Msg::CancelFile => {
+                self.pending_preview = None;
                 true
             }
 
@@ -615,8 +778,8 @@ impl Component for Debugger {
             }
 
             Msg::SelectWord(name) => {
-                if self.selected_word.as_ref() == Some(&name) {
-                    self.selected_word = None; // toggle off
+                if name.is_empty() || self.selected_word.as_ref() == Some(&name) {
+                    self.selected_word = None; // close
                 } else {
                     self.selected_word = Some(name);
                 }
@@ -627,11 +790,27 @@ impl Component for Debugger {
                 self.bottom_tab = tab;
                 true
             }
+
+            Msg::ToggleAbout => {
+                self.show_about = !self.show_about;
+                true
+            }
+
+            Msg::ToggleHistory => {
+                self.show_history = !self.show_history;
+                true
+            }
         }
     }
 
     fn rendered(&mut self, _ctx: &Context<Self>, _first_render: bool) {
         self.auto_scroll();
+        // Keep input focused unless About dialog is open.
+        if !self.show_about
+            && let Some(el) = self.input_ref.cast::<HtmlElement>()
+        {
+            let _ = el.focus();
+        }
     }
 
     fn view(&self, ctx: &Context<Self>) -> Html {
@@ -642,8 +821,24 @@ impl Component for Debugger {
         let caller_chain = self.build_caller_chain();
         let regions = self.memory_regions();
 
-        let reg_names = [
-            "r0/W", "r1/RSP", "r2/IP", "r3/fp", "sp/DSP", "r5/zc", "r6/iv", "r7/ir",
+        // Forth VM registers: (index, name, tooltip)
+        let forth_regs: [(usize, &str, &str); 5] = [
+            (0, "W\u{2026}",   "W (r0): Work register \u{2014} scratch, holds CFA during NEXT"),
+            (2, "IP\u{2026}",  "IP (r2): Instruction Pointer \u{2014} next threaded code address"),
+            (1, "RSP\u{2026}", "RSP (r1): Return Stack Pointer \u{2014} grows down from 0x0F0000"),
+            (4, "DSP\u{2026}", "DSP (sp/r4): Data Stack Pointer \u{2014} hardware push/pop in EBR"),
+            (3, "fp\u{2026}",  "fp (r3): Frame Pointer \u{2014} available as extra scratch"),
+        ];
+        // COR24 hardware registers: (name, tooltip)
+        let cpu_regs: [(&str, &str); 8] = [
+            ("r0",  "r0: General purpose register 0"),
+            ("r1",  "r1: General purpose register 1"),
+            ("r2",  "r2: General purpose register 2"),
+            ("fp",  "fp: Frame pointer"),
+            ("sp",  "sp: Stack pointer"),
+            ("z",   "z: Constant zero"),
+            ("iv",  "iv: Interrupt vector"),
+            ("ir",  "ir: Interrupt return"),
         ];
 
         // Compute total for region bar proportions.
@@ -671,24 +866,6 @@ impl Component for Debugger {
 
                     <select onchange={ctx.link().callback(|e: Event| {
                         let select: HtmlInputElement = e.target_unchecked_into();
-                        let tier = match select.value().as_str() {
-                            "Bootstrap" => ForthTier::Bootstrap,
-                            "Interpreter" => ForthTier::Interpreter,
-                            _ => ForthTier::Bootstrap,
-                        };
-                        Msg::SetTier(tier)
-                    })}>
-                        { for ForthTier::ALL.iter().map(|t| {
-                            html! {
-                                <option value={t.label()} selected={*t == self.tier}>
-                                    { t.label() }
-                                </option>
-                            }
-                        })}
-                    </select>
-
-                    <select onchange={ctx.link().callback(|e: Event| {
-                        let select: HtmlInputElement = e.target_unchecked_into();
                         let size = match select.value().as_str() {
                             "3 KB" => StackSize::ThreeKb,
                             _ => StackSize::EightKb,
@@ -703,8 +880,6 @@ impl Component for Debugger {
                             }
                         })}
                     </select>
-
-                    <span class="tier-desc">{ self.tier.description() }</span>
 
                     <select class="demo-select" onchange={ctx.link().callback(|e: Event| {
                         let select: HtmlInputElement = e.target_unchecked_into();
@@ -723,6 +898,30 @@ impl Component for Debugger {
                             }
                         })}
                     </select>
+
+                    <button class="upload-btn" onclick={
+                        let file_ref = self.file_input_ref.clone();
+                        Callback::from(move |_: MouseEvent| {
+                            if let Some(input) = file_ref.cast::<HtmlInputElement>() {
+                                input.click();
+                            }
+                        })
+                    }>
+                        {"Load .fth"}
+                    </button>
+                    <input
+                        type="file"
+                        accept=".fth,.fs,.f,.4th"
+                        ref={self.file_input_ref.clone()}
+                        style="display:none"
+                        onchange={ctx.link().callback(Msg::FileChanged)}
+                    />
+                    <button class="about-btn" onclick={ctx.link().callback(|_| Msg::ToggleHistory)}>
+                        {"History"}
+                    </button>
+                    <button class="about-btn" onclick={ctx.link().callback(|_| Msg::ToggleAbout)}>
+                        {"About"}
+                    </button>
                 </div>
 
                 // Memory map bar
@@ -742,15 +941,15 @@ impl Component for Debugger {
                     </div>
                 </div>
 
-                // Main panels
-                <div class="panels">
-                    // Output / terminal
+                // Main panels: 60% output | 25% Forth | 15% COR24
+                <div class="panels three-col">
+                    // Output / terminal (60%)
                     <div class="output-panel">
                         // Floating hardware panel (top-right)
                         <div class="hw-float">
                             <div class="hw-row">
                                 <span class="hw-label">{"D2"}</span>
-                                <div class={if snap.led & 1 != 0 { "led led-on" } else { "led led-off" }} />
+                                <div class={if snap.led & 1 == 0 { "led led-on" } else { "led led-off" }} />
                             </div>
                             <div class="hw-row">
                                 <span class="hw-label">{"S2"}</span>
@@ -766,39 +965,41 @@ impl Component for Debugger {
                             </div>
                         </div>
                         <div class="output" ref={self.output_ref.clone()}>{ &self.output }</div>
-                        <div class="input-bar">
-                            <span class="prompt">{"> "}</span>
+                        <div class={if self.waiting_for_input { "input-bar input-ready" }
+                                    else if self.running { "input-bar input-busy" }
+                                    else { "input-bar" }}>
+                            <span class="prompt">
+                                { if self.running && !self.waiting_for_input { "\u{25F3} " } else { "> " } }
+                            </span>
                             <input
                                 type="text"
+                                ref={self.input_ref.clone()}
                                 value={self.input.clone()}
                                 oninput={ctx.link().callback(|e: InputEvent| {
                                     let input: HtmlInputElement = e.target_unchecked_into();
                                     Msg::InputChanged(input.value())
                                 })}
                                 onkeydown={ctx.link().callback(Msg::InputKeyDown)}
-                                placeholder="Type Forth input..."
+                                placeholder={if self.running && !self.waiting_for_input {
+                                    "Booting..."
+                                } else {
+                                    "Type Forth input..."
+                                }}
                             />
                         </div>
                     </div>
 
-                    // Side panel: registers + stacks + disassembly
-                    <div class="side-panel">
-                        // CPU Registers
+                    // Forth panel (25%)
+                    <div class="forth-panel">
+                        // Forth VM Registers
                         <div class="panel-section">
-                            <h3>{"Registers"}</h3>
+                            <h3>{"Forth VM"}</h3>
                             <div class="registers">
-                                <span class="reg-name">{"PC"}</span>
-                                <span class={classes!(
-                                    "reg-value",
-                                    (snap.pc != self.prev_pc).then_some("changed")
-                                )}>
-                                    { format!("{:06X}", snap.pc) }
-                                </span>
-                                { for (0..8).map(|i| {
+                                { for forth_regs.iter().map(|&(i, name, tip)| {
                                     let changed = snap.regs[i] != self.prev_regs[i];
                                     html! {
                                         <>
-                                            <span class="reg-name">{ reg_names[i] }</span>
+                                            <span class="reg-name" title={tip}>{ name }</span>
                                             <span class={classes!(
                                                 "reg-value",
                                                 changed.then_some("changed")
@@ -808,16 +1009,12 @@ impl Component for Debugger {
                                         </>
                                     }
                                 })}
-                                <span class="reg-name">{"C"}</span>
-                                <span class="reg-value">
-                                    { if snap.c { "1" } else { "0" } }
-                                </span>
                             </div>
                         </div>
 
-                        // Data Stack
+                        // Forth Data Stack
                         <div class="panel-section">
-                            <h3>{ format!("Data Stack ({})", data_stack.len()) }</h3>
+                            <h3>{ format!("Forth Data Stack ({})", data_stack.len()) }</h3>
                             <div class="stack-display">
                                 { if data_stack.is_empty() {
                                     html! { <span class="stack-empty">{"(empty)"}</span> }
@@ -825,13 +1022,14 @@ impl Component for Debugger {
                                     html! {
                                         { for data_stack.iter().enumerate().map(|(i, val)| {
                                             let is_tos = i == data_stack.len() - 1;
+                                            let signed = if *val & 0x800000 != 0 { *val as i32 - 0x1000000 } else { *val as i32 };
                                             html! {
                                                 <div class="stack-entry">
                                                     <span class="stack-index">
                                                         { format!("[{}]", i) }
                                                     </span>
                                                     <span class="stack-value">
-                                                        { format!("{:06X}  {}", val, val) }
+                                                        { format!("{:06X}  {}", val, signed) }
                                                     </span>
                                                     { if is_tos {
                                                         html! { <span class="stack-tos">{"<- TOS"}</span> }
@@ -856,13 +1054,14 @@ impl Component for Debugger {
                                     html! {
                                         { for return_stack.iter().enumerate().map(|(i, val)| {
                                             let is_top = i == return_stack.len() - 1;
+                                            let signed = if *val & 0x800000 != 0 { *val as i32 - 0x1000000 } else { *val as i32 };
                                             html! {
                                                 <div class="stack-entry">
                                                     <span class="stack-index">
                                                         { format!("[{}]", i) }
                                                     </span>
                                                     <span class="stack-value">
-                                                        { format!("{:06X}  {}", val, val) }
+                                                        { format!("{:06X}  {}", val, signed) }
                                                     </span>
                                                     { if is_top {
                                                         html! { <span class="stack-tos">{"<- TOP"}</span> }
@@ -903,7 +1102,54 @@ impl Component for Debugger {
                             html! {}
                         }}
 
-                        // Disassembly with breakpoints
+                        // Dictionary
+                        <div class="panel-section">
+                            <h3>{"Dictionary"}</h3>
+                            { self.view_dictionary_list(ctx) }
+                        </div>
+                    </div>
+
+                    // COR24 panel (15%)
+                    <div class="cor24-panel">
+                        // COR24 CPU Registers
+                        <div class="panel-section">
+                            <h3>{"COR24 CPU"}</h3>
+                            <div class="registers">
+                                <span class="reg-name" title={"PC: Program Counter"}>{"PC\u{2026}"}</span>
+                                <span class={classes!(
+                                    "reg-value",
+                                    (snap.pc != self.prev_pc).then_some("changed")
+                                )}>
+                                    { format!("{:06X}", snap.pc) }
+                                </span>
+                                { for (0..8).map(|i| {
+                                    let changed = snap.regs[i] != self.prev_regs[i];
+                                    let (name, tip) = cpu_regs[i];
+                                    let value_str = if i == 5 {
+                                        "0".to_string()
+                                    } else {
+                                        format!("{:06X}", snap.regs[i] & 0xFFFFFF)
+                                    };
+                                    html! {
+                                        <>
+                                            <span class="reg-name" title={tip}>{ format!("{}\u{2026}", name) }</span>
+                                            <span class={classes!(
+                                                "reg-value",
+                                                changed.then_some("changed")
+                                            )}>
+                                                { value_str }
+                                            </span>
+                                        </>
+                                    }
+                                })}
+                                <span class="reg-name" title={"C: Carry/condition flag"}>{"C\u{2026}"}</span>
+                                <span class="reg-value">
+                                    { if snap.c { "1" } else { "0" } }
+                                </span>
+                            </div>
+                        </div>
+
+                        // Disassembly
                         <div class="panel-section">
                             <h3>{"Disassembly"}</h3>
                             <div class="disasm-view">
@@ -943,34 +1189,80 @@ impl Component for Debugger {
                             </div>
                         </div>
 
-                        // Bottom tabbed panel
-                        <div class="panel-section bottom-tabs">
-                            <div class="tab-bar">
-                                <button
-                                    class={classes!(
-                                        "tab-btn",
-                                        (self.bottom_tab == BottomTab::Dictionary).then_some("active")
-                                    )}
-                                    onclick={ctx.link().callback(|_| Msg::SetBottomTab(BottomTab::Dictionary))}>
-                                    {"Dictionary"}
-                                </button>
-                                <button
-                                    class={classes!(
-                                        "tab-btn",
-                                        (self.bottom_tab == BottomTab::CompileLog).then_some("active")
-                                    )}
-                                    onclick={ctx.link().callback(|_| Msg::SetBottomTab(BottomTab::CompileLog))}>
-                                    {"Compile Log"}
-                                </button>
-                            </div>
-
-                            { match self.bottom_tab {
-                                BottomTab::Dictionary => self.view_dictionary(ctx),
-                                BottomTab::CompileLog => self.view_compile_log(),
-                            }}
+                        // Compile Log
+                        <div class="panel-section">
+                            <h3>{"Compile Log"}</h3>
+                            { self.view_compile_log_content() }
                         </div>
                     </div>
                 </div>
+
+                // Word Inspector dialog
+                { if self.selected_word.is_some() {
+                    html! {
+                        <div class="about-overlay" onclick={ctx.link().callback(|_| Msg::SelectWord(String::new()))}>
+                            <div class="about-dialog word-inspector-dialog"
+                                 onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                                { self.view_word_inspector(ctx) }
+                                <button onclick={ctx.link().callback(|_| Msg::SelectWord(String::new()))}>
+                                    {"Close"}
+                                </button>
+                            </div>
+                        </div>
+                    }
+                } else {
+                    html! {}
+                }}
+
+                // File/Demo preview dialog
+                { if let Some((ref title, ref contents)) = self.pending_preview {
+                    html! {
+                        <div class="about-overlay" onclick={ctx.link().callback(|_| Msg::CancelFile)}>
+                            <div class="about-dialog file-preview-dialog"
+                                 onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                                <h2>{ title }</h2>
+                                <pre class="file-preview">{ contents }</pre>
+                                <div class="dialog-buttons">
+                                    <button class="run-btn" onclick={ctx.link().callback(|_| Msg::RunFile)}>
+                                        {"Run"}
+                                    </button>
+                                    <button onclick={ctx.link().callback(|_| Msg::CancelFile)}>
+                                        {"Cancel"}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                } else {
+                    html! {}
+                }}
+
+                // History dialog
+                { if self.show_history {
+                    html! {
+                        <div class="about-overlay" onclick={ctx.link().callback(|_| Msg::ToggleHistory)}>
+                            <div class="about-dialog file-preview-dialog"
+                                 onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                                <h2>{"Command History"}</h2>
+                                { if self.full_log.is_empty() {
+                                    html! { <p>{"No commands yet."}</p> }
+                                } else {
+                                    html! {
+                                        <pre class="file-preview">
+                                            { self.full_log.iter().enumerate().map(|(i, cmd)| {
+                                                format!("{:3}  {}\n", i + 1, cmd)
+                                            }).collect::<String>() }
+                                        </pre>
+                                    }
+                                }}
+                                <p class="about-hint">{"Use "}<strong>{"Up/Down Arrow"}</strong>{" in the input to recall commands."}</p>
+                                <button onclick={ctx.link().callback(|_| Msg::ToggleHistory)}>{"Close"}</button>
+                            </div>
+                        </div>
+                    }
+                } else {
+                    html! {}
+                }}
 
                 // Status bar
                 <div class="status-bar">
@@ -978,7 +1270,8 @@ impl Component for Debugger {
                         <span class="status-label">{"Status:"}</span>
                         <span class="status-value">
                             { if self.halted { "Halted" }
-                              else if self.running { "Running" }
+                              else if self.waiting_for_input { "Ready" }
+                              else if self.running { "Booting..." }
                               else { "Paused" }
                             }
                         </span>
@@ -986,10 +1279,6 @@ impl Component for Debugger {
                     <div class="status-item">
                         <span class="status-label">{"PC:"}</span>
                         <span class="status-value">{ format!("0x{:06X}", snap.pc) }</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">{"Tier:"}</span>
-                        <span class="status-value">{ self.tier.label() }</span>
                     </div>
                     <div class="status-item">
                         <span class="status-label">{"Stack:"}</span>
@@ -1008,136 +1297,155 @@ impl Component for Debugger {
                         html! {}
                     }}
                 </div>
+
+                // About dialog overlay
+                { if self.show_about {
+                    html! {
+                        <div class="about-overlay" onclick={ctx.link().callback(|_| Msg::ToggleAbout)}>
+                            <div class="about-dialog" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
+                                <h2>{"Tiny Forth"}</h2>
+                                <p>{"A Forth interpreter running on the COR24 soft CPU via WebAssembly."}</p>
+                                <h3>{"Try these:"}</h3>
+                                <pre>{concat!(
+                                    "1 2 + .          add 1+2, print result\n",
+                                    "words            list all words\n",
+                                    ": double 2 * ;   define a new word\n",
+                                    "5 double .        use it\n",
+                                    "d2_on!           turn on LED D2\n",
+                                    "d2_off!          turn it off\n",
+                                    "s2?              check switch S2\n",
+                                )}</pre>
+                                <p class="about-hint">{"Use "}<strong>{"Up Arrow"}</strong>{" to recall previous commands."}</p>
+                                <button onclick={ctx.link().callback(|_| Msg::ToggleAbout)}>{"Close"}</button>
+                            </div>
+                        </div>
+                    }
+                } else {
+                    html! {}
+                }}
             </div>
         }
     }
 }
 
 impl Debugger {
-    /// Render the dictionary browser + word inspector tab.
-    fn view_dictionary(&self, ctx: &Context<Self>) -> Html {
+    /// Render just the dictionary word list (for Forth panel).
+    fn view_dictionary_list(&self, ctx: &Context<Self>) -> Html {
         html! {
-            <div class="dict-panel">
-                <div class="dict-list">
-                    { for self.dict_entries.iter().map(|entry| {
-                        let name = entry.name.clone();
-                        let selected = self.selected_word.as_ref() == Some(&entry.name);
-                        let kind_class = match entry.kind {
-                            WordKind::Primitive => "dict-primitive",
-                            WordKind::ColonDef => "dict-colon",
-                            WordKind::Thread => "dict-thread",
-                        };
-                        let kind_label = match entry.kind {
-                            WordKind::Primitive => "PRIM",
-                            WordKind::ColonDef => "COLON",
-                            WordKind::Thread => "THREAD",
-                        };
-                        html! {
-                            <div class={classes!(
-                                "dict-entry",
-                                kind_class,
-                                selected.then_some("dict-selected")
-                            )}
-                            onclick={ctx.link().callback(move |_| Msg::SelectWord(name.clone()))}>
-                                <span class="dict-addr">
-                                    { format!("{:06X}", entry.addr) }
-                                </span>
-                                <span class="dict-name">{ &entry.name }</span>
-                                <span class="dict-kind">{ kind_label }</span>
-                            </div>
-                        }
-                    })}
-                </div>
-
-                // Word inspector
-                { if let Some(ref word_name) = self.selected_word {
-                    if let Some(entry) = self.dict_entries.iter().find(|e| &e.name == word_name) {
-                        match entry.kind {
-                            WordKind::ColonDef => {
-                                let thread = self.read_word_thread(entry.addr);
-                                html! {
-                                    <div class="word-inspector">
-                                        <h4>{ format!(": {}", word_name) }</h4>
-                                        <div class="word-thread">
-                                            { for thread.iter().map(|(addr, name)| {
-                                                // Detect literal values: if previous entry was do_lit,
-                                                // this is the literal value
-                                                html! {
-                                                    <div class="thread-entry">
-                                                        <span class="thread-addr">
-                                                            { format!("{:06X}", addr) }
-                                                        </span>
-                                                        <span class="thread-name">{ name }</span>
-                                                    </div>
-                                                }
-                                            })}
-                                        </div>
-                                    </div>
-                                }
-                            }
-                            WordKind::Thread => {
-                                let thread = self.read_word_thread(entry.addr.wrapping_sub(CELL));
-                                html! {
-                                    <div class="word-inspector">
-                                        <h4>{ format!("thread: {}", word_name) }</h4>
-                                        <div class="word-thread">
-                                            { for thread.iter().map(|(addr, name)| {
-                                                html! {
-                                                    <div class="thread-entry">
-                                                        <span class="thread-addr">
-                                                            { format!("{:06X}", addr) }
-                                                        </span>
-                                                        <span class="thread-name">{ name }</span>
-                                                    </div>
-                                                }
-                                            })}
-                                        </div>
-                                    </div>
-                                }
-                            }
-                            WordKind::Primitive => {
-                                let disasm = self.emulator.disassemble(entry.addr, 16);
-                                html! {
-                                    <div class="word-inspector">
-                                        <h4>{ format!("primitive: {}", word_name) }</h4>
-                                        <div class="prim-disasm">
-                                            { for disasm.iter().take_while(|(addr, _, _)| {
-                                                // Stop if we hit another label (except our own)
-                                                *addr == entry.addr
-                                                    || !self.reverse_labels.contains_key(addr)
-                                            }).map(|(addr, mnemonic, _)| {
-                                                html! {
-                                                    <div class="disasm-line">
-                                                        <span class="disasm-addr">
-                                                            { format!("{:06X}", addr) }
-                                                        </span>
-                                                        <span class="disasm-instr">
-                                                            { mnemonic }
-                                                        </span>
-                                                    </div>
-                                                }
-                                            })}
-                                        </div>
-                                    </div>
-                                }
-                            }
-                        }
-                    } else {
-                        html! {}
-                    }
-                } else {
+            <div class="dict-list">
+                { for self.dict_entries.iter().map(|entry| {
+                    let name = entry.name.clone();
+                    let selected = self.selected_word.as_ref() == Some(&entry.name);
+                    let kind_class = match entry.kind {
+                        WordKind::Primitive => "dict-primitive",
+                        WordKind::ColonDef => "dict-colon",
+                        WordKind::Thread => "dict-thread",
+                    };
+                    let kind_label = match entry.kind {
+                        WordKind::Primitive => "PRIM",
+                        WordKind::ColonDef => "COLON",
+                        WordKind::Thread => "THREAD",
+                    };
                     html! {
-                        <div class="word-inspector-empty">
-                            {"Click a word to inspect"}
+                        <div class={classes!(
+                            "dict-entry",
+                            kind_class,
+                            selected.then_some("dict-selected")
+                        )}
+                        onclick={ctx.link().callback(move |_| Msg::SelectWord(name.clone()))}>
+                            <span class="dict-addr">
+                                { format!("{:06X}", entry.addr) }
+                            </span>
+                            <span class="dict-name">{ &entry.name }</span>
+                            <span class="dict-kind">{ kind_label }</span>
                         </div>
                     }
-                }}
+                })}
             </div>
         }
     }
 
-    /// Render the compile log tab.
-    fn view_compile_log(&self) -> Html {
+    /// Render word inspector content (shown in dialog).
+    fn view_word_inspector(&self, _ctx: &Context<Self>) -> Html {
+        if let Some(ref word_name) = self.selected_word {
+            if let Some(entry) = self.dict_entries.iter().find(|e| &e.name == word_name) {
+                match entry.kind {
+                    WordKind::ColonDef => {
+                        let thread = self.read_word_thread(entry.addr);
+                        html! {
+                            <div class="word-inspector">
+                                <h2>{ format!(": {}", word_name) }</h2>
+                                <div class="word-thread">
+                                    { for thread.iter().map(|(addr, name)| {
+                                        html! {
+                                            <div class="thread-entry">
+                                                <span class="thread-addr">
+                                                    { format!("{:06X}", addr) }
+                                                </span>
+                                                <span class="thread-name">{ name }</span>
+                                            </div>
+                                        }
+                                    })}
+                                </div>
+                            </div>
+                        }
+                    }
+                    WordKind::Thread => {
+                        let thread = self.read_word_thread(entry.addr.wrapping_sub(CELL));
+                        html! {
+                            <div class="word-inspector">
+                                <h2>{ format!("thread: {}", word_name) }</h2>
+                                <div class="word-thread">
+                                    { for thread.iter().map(|(addr, name)| {
+                                        html! {
+                                            <div class="thread-entry">
+                                                <span class="thread-addr">
+                                                    { format!("{:06X}", addr) }
+                                                </span>
+                                                <span class="thread-name">{ name }</span>
+                                            </div>
+                                        }
+                                    })}
+                                </div>
+                            </div>
+                        }
+                    }
+                    WordKind::Primitive => {
+                        let disasm = self.emulator.disassemble(entry.addr, 16);
+                        html! {
+                            <div class="word-inspector">
+                                <h2>{ format!("primitive: {}", word_name) }</h2>
+                                <div class="prim-disasm">
+                                    { for disasm.iter().take_while(|(addr, _, _)| {
+                                        *addr == entry.addr
+                                            || !self.reverse_labels.contains_key(addr)
+                                    }).map(|(addr, mnemonic, _)| {
+                                        html! {
+                                            <div class="disasm-line">
+                                                <span class="disasm-addr">
+                                                    { format!("{:06X}", addr) }
+                                                </span>
+                                                <span class="disasm-instr">
+                                                    { mnemonic }
+                                                </span>
+                                            </div>
+                                        }
+                                    })}
+                                </div>
+                            </div>
+                        }
+                    }
+                }
+            } else {
+                html! {}
+            }
+        } else {
+            html! {}
+        }
+    }
+
+    /// Render the compile log content (for COR24 panel).
+    fn view_compile_log_content(&self) -> Html {
         html! {
             <div class="compile-log">
                 { for self.assembled_lines.iter().filter(|line| {

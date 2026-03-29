@@ -6,7 +6,7 @@
 pub enum ForthTier {
     /// Phase 1: Bootstrap, UART I/O, stack tests
     Bootstrap,
-    /// Phase 4: Full interpreter with LED!, DOT, NUMBER, QUIT loop
+    /// Phase 4: Full interpreter with D2_ON!/D2_OFF!, DOT, NUMBER, QUIT loop
     Interpreter,
 }
 
@@ -21,7 +21,7 @@ impl ForthTier {
     pub fn description(self) -> &'static str {
         match self {
             Self::Bootstrap => "Phase 1: UART I/O, data/return stack tests, EMIT, KEY",
-            Self::Interpreter => "Phase 4: REPL with LED!, .S, HEX, WORDS, BYE",
+            Self::Interpreter => "Phase 5: Compile mode, *, colon defs, .fth files",
         }
     }
 

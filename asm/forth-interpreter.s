@@ -300,9 +300,28 @@ do_plus:
     add r2, 3
     jmp (r0)
 
+; * ( n1 n2 -- n1*n2 )
+entry_star:
+    .word entry_plus
+    .byte 1
+    .byte 42
+do_star:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP
+    pop r2               ; r2 = n2
+    pop r0               ; r0 = n1
+    mul r0, r2           ; r0 = n1 * n2
+    push r0
+    lw r2, 0(r1)        ; restore IP
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
 ; - ( n1 n2 -- n1-n2 )
 entry_minus:
-    .word entry_plus
+    .word entry_star
     .byte 1
     .byte 45
 do_minus:
@@ -917,10 +936,37 @@ find_cmp_loop:
     ; Load entry char
     lw r0, 3(r1)        ; ename_ptr (RS offset 3)
     lbu r2, 0(r0)       ; r2 = entry char
+    ; toupper entry char: if 'a'<=r2<='z', subtract 32
+    push r2              ; save original
+    lcu r0, 97
+    clu r2, r0           ; C = (r2 < 'a')
+    brt find_eu_done
+    lcu r0, 123
+    clu r2, r0           ; C = (r2 < 123) i.e. r2 <= 'z'
+    brf find_eu_done
+    pop r2
+    add r2, -32
+    bra find_eu_save
+find_eu_done:
+    pop r2
+find_eu_save:
+    push r2              ; DS: [upper(entry_char)]
 
     ; Load search char
     lw r0, 0(r1)        ; sname_ptr (RS offset 0)
     lbu r0, 0(r0)       ; r0 = search char
+    ; toupper search char
+    mov r2, r0
+    lcu r0, 97
+    clu r2, r0
+    brt find_su_done
+    lcu r0, 123
+    clu r2, r0
+    brf find_su_done
+    add r2, -32
+find_su_done:
+    ; r2 = uppercased search char
+    pop r0               ; r0 = uppercased entry char
 
     ceq r0, r2
     brf find_char_fail
@@ -1434,24 +1480,89 @@ do_immediate:
     jmp (r0)
 
 ; ============================================================
-; Phase 4: LED!, DOT, interpret-only shell
+; Phase 4: D2_ON!/D2_OFF!, DOT, interpret-only shell
 ; ============================================================
 
 ; ------------------------------------------------------------
-; LED! ( n -- ) : Write low bit of n to LED register at 0xFF0000
+; D2_ON! ( -- ) : Turn on LED D2 (writes 0 to 0xFF0000, active-low)
 ; ------------------------------------------------------------
-entry_led_store:
+entry_d2_on:
     .word entry_immediate
-    .byte 4
-    .byte 76, 69, 68, 33   ; "LED!"
-do_led_store:
+    .byte 6
+    .byte 68, 50, 95, 79, 78, 33       ; "D2_ON!"
+do_d2_on:
     add r1, -3
     sw r2, 0(r1)        ; save IP
-    pop r0               ; n
-    lcu r2, 1
-    and r0, r2           ; mask to low bit
+    lcu r0, 0            ; 0 = ON (active-low)
     la r2, -65536        ; 0xFF0000 LED register
     sb r0, 0(r2)
+    lw r2, 0(r1)
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
+; D2_OFF! ( -- ) : Turn off LED D2 (writes 1 to 0xFF0000, active-low)
+; ------------------------------------------------------------
+entry_d2_off:
+    .word entry_d2_on
+    .byte 7
+    .byte 68, 50, 95, 79, 70, 70, 33       ; "D2_OFF!"
+do_d2_off:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP
+    lcu r0, 1            ; 1 = OFF (active-low)
+    la r2, -65536        ; 0xFF0000 LED register
+    sb r0, 0(r2)
+    lw r2, 0(r1)
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
+; S2? ( -- flag ) : Push 1 if switch S2 is pressed, 0 otherwise
+; Reads bit 0 of 0xFF0000 (active-low: 0=pressed, 1=released)
+; ------------------------------------------------------------
+entry_s2_query:
+    .word entry_d2_off
+    .byte 3
+    .byte 83, 50, 63             ; "S2?"
+do_s2_query:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP
+    la r2, -65536        ; 0xFF0000 LED/Switch register
+    lbu r0, 0(r2)       ; read switch state
+    lcu r2, 1
+    and r0, r2           ; mask to bit 0
+    ; r0 = 0 if pressed (active-low), 1 if released
+    ; Invert: pressed → 1, released → 0
+    xor r0, r2           ; flip bit 0
+    push r0
+    lw r2, 0(r1)
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
+; S2-D2! ( -- ) : Set LED D2 to match switch S2 (pressed=ON, released=OFF)
+; Both are active-low, so read switch bit and write it directly to LED.
+; ------------------------------------------------------------
+entry_s2_d2:
+    .word entry_s2_query
+    .byte 6
+    .byte 83, 50, 45, 68, 50, 33   ; "S2-D2!"
+do_s2_d2:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP
+    la r2, -65536        ; 0xFF0000 LED/Switch register
+    lbu r0, 0(r2)       ; read switch bit (active-low: 0=pressed)
+    sb r0, 0(r2)         ; write same bit to LED (active-low: 0=ON)
     lw r2, 0(r1)
     add r1, 3
     ; NEXT
@@ -1464,7 +1575,7 @@ do_led_store:
 ; Uses repeated subtraction for division.
 ; ------------------------------------------------------------
 entry_dot:
-    .word entry_led_store
+    .word entry_s2_d2
     .byte 1
     .byte 46              ; "."
 do_dot:
@@ -1855,14 +1966,57 @@ i_find_thread:
 ; After FIND: DS has (c-addr 0) or (cfa flag)
 do_i_after_find:
     ; RS: [caller_IP]
-    pop r0               ; flag (0=not found)
+    pop r0               ; flag (0=not found, 1=IMMEDIATE, -1=normal)
     ceq r0, z
     brt i_not_found
-    ; Found: DS has [cfa]. Execute it.
-    ; Set IP to continuation thread so after EXECUTE, we loop
+
+    ; Found: DS has [cfa], r0 = flag
+    ; Check STATE
+    add r1, -3
+    sw r0, 0(r1)        ; save flag. RS: [flag, caller_IP]
+    la r0, var_state_val
+    lw r0, 0(r0)        ; r0 = STATE
+    ceq r0, z
+    brt i_found_exec_interp ; STATE=0 → interpreting → always execute
+
+    ; Compiling (STATE != 0): check IMMEDIATE flag
+    lw r0, 0(r1)        ; flag
+    add r1, 3           ; pop flag. RS: [caller_IP]
+    lcu r2, 1
+    ceq r0, r2           ; C = (flag == 1 = IMMEDIATE)
+    brt i_found_exec     ; IMMEDIATE → execute even in compile mode
+
+    ; Normal word + compile mode → COMMA the CFA
+    ; DS: [cfa]
+    la r2, i_comma_continue
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+i_comma_continue:
+    .word do_comma       ; compile the CFA
+    .word do_word        ; get next token
+    .word do_i_after_word
+
+i_found_exec:
+    ; Execute the word. DS: [cfa]
+    ; Clean RS if flag is still there (STATE=0 path)
+    ; STATE=0 path: RS = [flag, caller_IP], need to pop flag
+    ; IMMEDIATE path: RS = [caller_IP], flag already popped
+    ; To unify: check RS. Actually, let me use separate labels.
+    ; The STATE=0 branch jumps here with RS: [flag, caller_IP]
+    ; The IMMEDIATE branch jumps here with RS: [caller_IP]
+    ; I need to know which path. Use a flag or separate labels.
+    bra i_do_exec        ; IMMEDIATE path (flag already popped)
+
+i_found_exec_interp:
+    ; STATE=0 path: RS: [flag, caller_IP]
+    add r1, 3           ; pop flag. RS: [caller_IP]
+
+i_do_exec:
     la r2, i_continue
     pop r0               ; cfa
-    jmp (r0)             ; execute it — NEXT will use IP=i_continue
+    jmp (r0)             ; execute — NEXT will use IP=i_continue
 
 i_continue:
     .word do_word
@@ -1921,7 +2075,43 @@ i_num_ok:
     pop r2               ; n
     pop r0               ; discard c-addr
     push r2              ; DS: [n]
-    ; Continue loop
+
+    ; Check STATE
+    la r0, var_state_val
+    lw r0, 0(r0)
+    ceq r0, z
+    brt i_num_interp     ; STATE=0 → leave on stack, continue
+
+    ; Compiling: compile LIT, n
+    ; DS: [n]. Need to compile do_lit then n.
+    ; First push do_lit address, comma it, then push n, comma it.
+    pop r0               ; n
+    add r1, -3
+    sw r0, 0(r1)        ; save n on RS. RS: [n, caller_IP]
+    la r0, do_lit
+    push r0              ; DS: [do_lit_addr]
+    la r2, i_compile_lit_thread
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+i_compile_lit_thread:
+    .word do_comma       ; compile do_lit address
+    .word do_i_compile_n
+
+do_i_compile_n:
+    ; RS: [n, caller_IP]
+    lw r0, 0(r1)        ; n
+    add r1, 3           ; pop n. RS: [caller_IP]
+    push r0              ; DS: [n] for comma
+    ; Comma n, then continue loop
+    la r2, i_comma_continue
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+i_num_interp:
+    ; Interpreting: n already on stack, continue loop
     la r2, i_continue
     lw r0, 0(r2)
     add r2, 3
@@ -2388,10 +2578,83 @@ words_next:
     jmp (r2)
 
 ; ------------------------------------------------------------
+; ( ( -- ) : Paren comment — discard until ')' [IMMEDIATE]
+; Reads and discards UART bytes until closing paren.
+; ------------------------------------------------------------
+entry_paren:
+    .word entry_words
+    .byte 0xC1           ; length=1 + IMMEDIATE flag (bit 7)
+    .byte 40             ; "("
+do_paren:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP
+paren_loop:
+    la r0, -65280        ; UART base (0xFF0100)
+paren_rx:
+    lbu r2, 1(r0)       ; UART status
+    lcu r0, 1
+    and r2, r0
+    ceq r2, z
+    brt paren_rx         ; not ready, spin
+    la r0, -65280
+    lbu r0, 0(r0)       ; read char
+    lcu r2, 41           ; ')'
+    ceq r0, r2
+    brt paren_done       ; found closing paren
+    bra paren_loop
+paren_done:
+    lw r2, 0(r1)        ; restore IP
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
+; \ ( -- ) : Line comment — discard rest of line [IMMEDIATE]
+; Reads and discards UART bytes until newline, then sets EOL flag.
+; ------------------------------------------------------------
+entry_backslash:
+    .word entry_paren
+    .byte 0xC1           ; length=1 + IMMEDIATE flag (bit 7)
+    .byte 92             ; "\"
+do_backslash:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP
+backslash_loop:
+    la r0, -65280        ; UART base (0xFF0100)
+backslash_rx:
+    lbu r2, 1(r0)       ; UART status
+    lcu r0, 1
+    and r2, r0
+    ceq r2, z
+    brt backslash_rx     ; not ready, spin
+    la r0, -65280
+    lbu r0, 0(r0)       ; read char
+    lcu r2, 10
+    ceq r0, r2           ; is newline?
+    brt backslash_eol
+    lcu r2, 13
+    ceq r0, r2           ; is CR?
+    brt backslash_eol
+    bra backslash_loop   ; keep reading
+backslash_eol:
+    ; Set EOL flag so next WORD returns empty
+    la r0, word_eol_flag
+    lc r2, 1
+    sb r2, 0(r0)
+    lw r2, 0(r1)        ; restore IP
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
 ; BYE ( -- ) : Halt the CPU
 ; ------------------------------------------------------------
 entry_bye:
-    .word entry_words
+    .word entry_backslash
     .byte 3
     .byte 66, 89, 69        ; "BYE"
 do_bye:
@@ -2518,10 +2781,9 @@ test_thread:
     .word 42
     .word do_dot
 
-    ; --- Phase 4 Test B: LED! → turn on LED D2 ---
-    .word do_lit
-    .word 1
-    .word do_led_store
+    ; --- Phase 4 Test B: D2_ON!/D2_OFF! → blink LED D2, leave off ---
+    .word do_d2_on
+    .word do_d2_off
 
     ; --- Enter interactive interpreter ---
     .word do_quit
