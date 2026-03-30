@@ -1,6 +1,6 @@
 /// Forth tier determines which pre-compiled assembly to load.
 ///
-/// As tf24a grows through development phases, new tiers can be added
+/// As sw-cor24-forth grows through development phases, new tiers can be added
 /// with progressively richer word sets.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ForthTier {

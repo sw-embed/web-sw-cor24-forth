@@ -10,7 +10,7 @@ pub fn app() -> Html {
     html! {
         <>
             // GitHub corner
-            <a href="https://github.com/sw-vibe-coding/web-tf24a" class="github-corner"
+            <a href="https://github.com/sw-embed/web-sw-cor24-forth" class="github-corner"
                aria-label="View source on GitHub" target="_blank">
                 <svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true">
                     <path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z" />

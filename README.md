@@ -1,10 +1,10 @@
-# web-tf24a
+# web-sw-cor24-forth
 
-Web UI for [Tiny Forth](https://github.com/sw-vibe-coding/tf24a) on COR24. Browser-based Forth debugger running the tf24a DTC Forth interpreter on the COR24 emulator via Rust, Yew, and WebAssembly.
+Web UI for [sw-cor24-forth](https://github.com/sw-embed/sw-cor24-forth) on COR24. Browser-based Forth debugger running the DTC Forth interpreter on the COR24 emulator via Rust, Yew, and WebAssembly.
 
 Type Forth commands, step through threaded code, inspect stacks and registers, and toggle hardware I/O — all in the browser.
 
-**[Live Demo](https://sw-vibe-coding.github.io/web-tf24a/)**
+**[Live Demo](https://sw-embed.github.io/web-sw-cor24-forth/)**
 
 ![Stack Ops demo running in the debugger](images/screenshot.png?ts=1774477179000)
 
@@ -19,18 +19,21 @@ Type Forth commands, step through threaded code, inspect stacks and registers, a
 - **Multi-tier assembly**: Bootstrap (Phase 1) and Interpreter (Phase 4: D2_ON!/D2_OFF!, .S, HEX, WORDS, BYE)
 - **Configurable stack**: 3 KB (hardware default) or 8 KB (full EBR window)
 
+## Provenance
+
+Forked from [sw-vibe-coding/web-tf24a](https://github.com/sw-vibe-coding/web-tf24a) as part of the COR24 ecosystem consolidation under [sw-embed](https://github.com/sw-embed).
+
 ## Related
 
-- [tf24a](https://github.com/sw-vibe-coding/tf24a) — The Forth implementation (assembly)
-- [cor24-rs](https://github.com/sw-embed/cor24-rs) — COR24 assembler and emulator (Rust)
-- [web-tml24c](https://github.com/sw-vibe-coding/web-tml24c) — Web UI for Tiny Macro Lisp
-- [web-tc24r](https://github.com/sw-vibe-coding/web-tc24r) — Web UI for tc24r C compiler
+- [sw-cor24-forth](https://github.com/sw-embed/sw-cor24-forth) — The Forth implementation (assembly)
+- [sw-cor24-emulator](https://github.com/sw-embed/sw-cor24-emulator) — COR24 emulator (Rust)
+- [sw-cor24-project](https://github.com/sw-embed/sw-cor24-project) — COR24 ecosystem hub
 - [COR24-TB](https://makerlisp.com) — The COR24 target board
 
 ## Documentation
 
-- [tf24a docs](https://github.com/sw-vibe-coding/tf24a/tree/main/docs) — Forth word reference, LED control, design notes
-- [COR24 ISA](https://github.com/sw-embed/cor24-rs/blob/main/docs/isa.md) — 24-bit RISC instruction set
+- [sw-cor24-forth docs](https://github.com/sw-embed/sw-cor24-forth/tree/main/docs) — Forth word reference, LED control, design notes
+- [COR24 ISA](https://github.com/sw-embed/sw-cor24-emulator/blob/main/docs/isa.md) — 24-bit RISC instruction set
 
 ## Development
 

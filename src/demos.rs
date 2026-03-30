@@ -7,48 +7,48 @@ pub struct Demo {
     pub tier: ForthTier,
 }
 
-/// Demos sourced from tf24a/examples/*.fth (alphabetized)
+/// Demos sourced from sw-cor24-forth/examples/*.fth (alphabetized)
 pub const DEMOS: &[Demo] = &[
     Demo {
         title: "ASCII Stars",
         description: "STAR, STARS, NL — EMIT patterns",
-        source: include_str!("../../tf24a/examples/04-stars.fth"),
+        source: include_str!("../../sw-cor24-forth/examples/04-stars.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
         title: "Comments",
         description: "\\ and ( ) — line and inline comments",
-        source: include_str!("../../tf24a/examples/06-comments.fth"),
+        source: include_str!("../../sw-cor24-forth/examples/06-comments.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
         title: "Colon Definitions",
         description: "TWO, SQUARE, CUBE — compile mode",
-        source: include_str!("../../tf24a/examples/01-colon.fth"),
+        source: include_str!("../../sw-cor24-forth/examples/01-colon.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
         title: "LED Control",
         description: "ON/OFF words, BLINK — hardware I/O",
-        source: include_str!("../../tf24a/examples/02-led.fth"),
+        source: include_str!("../../sw-cor24-forth/examples/02-led.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
         title: "Math Words",
         description: "NEGATE, DOUBLE, TRIPLE, * multiply",
-        source: include_str!("../../tf24a/examples/03-math.fth"),
+        source: include_str!("../../sw-cor24-forth/examples/03-math.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
         title: "Smoke Test",
         description: ".S, arithmetic, hex, WORDS — interpret-only",
-        source: include_str!("../../tf24a/examples/00-smoke.fth"),
+        source: include_str!("../../sw-cor24-forth/examples/00-smoke.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
         title: "Switch \u{2192} LED",
         description: "S2-D2! — click S2 first, then run",
-        source: include_str!("../../tf24a/examples/05-switch-led.fth"),
+        source: include_str!("../../sw-cor24-forth/examples/05-switch-led.fth"),
         tier: ForthTier::Interpreter,
     },
 ];
