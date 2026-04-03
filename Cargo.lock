@@ -42,18 +42,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
-name = "components"
-version = "0.1.0"
-dependencies = [
- "gloo 0.11.0",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "web-sys",
- "yew",
-]
-
-[[package]]
 name = "console_error_panic_hook"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -67,18 +55,10 @@ dependencies = [
 name = "cor24-emulator"
 version = "0.1.0"
 dependencies = [
- "components",
- "console_error_panic_hook",
  "cor24-isa",
- "getrandom",
- "gloo 0.11.0",
  "serde",
- "serde-wasm-bindgen 0.6.5",
  "serde_json",
  "thiserror 2.0.18",
- "wasm-bindgen",
- "web-sys",
- "yew",
 ]
 
 [[package]]
@@ -1125,17 +1105,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "web-sys"
-version = "0.3.91"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "854ba17bb104abfb26ba36da9729addc7ce7f06f5c0f90f3c391f8461cca21f9"
-dependencies = [
- "js-sys",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "web-tf24a"
+name = "web-sw-cor24-forth"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
@@ -1145,6 +1115,16 @@ dependencies = [
  "wasm-bindgen",
  "web-sys",
  "yew",
+]
+
+[[package]]
+name = "web-sys"
+version = "0.3.91"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "854ba17bb104abfb26ba36da9729addc7ce7f06f5c0f90f3c391f8461cca21f9"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
