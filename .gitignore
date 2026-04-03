@@ -1,6 +1,5 @@
 /target
 /dist
-/.agentrail
 *.wasm
 !pages/*.wasm
 *.o
