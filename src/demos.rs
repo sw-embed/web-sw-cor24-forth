@@ -16,6 +16,12 @@ pub const DEMOS: &[Demo] = &[
         tier: ForthTier::Interpreter,
     },
     Demo {
+        title: "Division & Modulo",
+        description: "/MOD, /, MOD — unsigned integer division",
+        source: include_str!("../../sw-cor24-forth/examples/07-divmod.fth"),
+        tier: ForthTier::Interpreter,
+    },
+    Demo {
         title: "Comments",
         description: "\\ and ( ) — line and inline comments",
         source: include_str!("../../sw-cor24-forth/examples/06-comments.fth"),

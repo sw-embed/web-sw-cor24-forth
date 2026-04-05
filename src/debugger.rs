@@ -3,8 +3,8 @@
 use crate::config::{ForthTier, StackSize};
 use crate::demos::DEMOS;
 use cor24_emulator::{AssembledLine, Assembler, EmulatorCore};
-use gloo::file::callbacks::FileReader;
 use gloo::file::File;
+use gloo::file::callbacks::FileReader;
 use gloo::timers::callback::Timeout;
 use std::collections::{HashMap, VecDeque};
 use web_sys::{HtmlElement, HtmlInputElement};
@@ -185,10 +185,16 @@ impl Debugger {
         self.uart_rx_queue.clear();
         self.selected_word = None;
         self.waiting_for_input = false;
-        self.uart_poll_addrs = ["key_poll", "word_skip_rx", "word_skip_rx2", "word_read_rx", "word_read_rx2"]
-            .iter()
-            .filter_map(|name| self.labels.get(*name).copied())
-            .collect();
+        self.uart_poll_addrs = [
+            "key_poll",
+            "word_skip_rx",
+            "word_skip_rx2",
+            "word_read_rx",
+            "word_read_rx2",
+        ]
+        .iter()
+        .filter_map(|name| self.labels.get(*name).copied())
+        .collect();
         self.switch_pressed = false;
         self.selected_demo = None;
 
@@ -523,8 +529,12 @@ impl Component for Debugger {
                 // Detect when interpreter is idle in a UART poll loop (waiting for input).
                 let pc = self.emulator.snapshot().pc;
                 let was_waiting = self.waiting_for_input;
-                self.waiting_for_input = matches!(result.reason, cor24_emulator::StopReason::CycleLimit)
-                    && self.uart_poll_addrs.iter().any(|&addr| pc >= addr && pc < addr + 16);
+                self.waiting_for_input =
+                    matches!(result.reason, cor24_emulator::StopReason::CycleLimit)
+                        && self
+                            .uart_poll_addrs
+                            .iter()
+                            .any(|&addr| pc >= addr && pc < addr + 16);
 
                 // Clear boot output on first transition to ready.
                 if self.waiting_for_input && !was_waiting && self.uart_rx_queue.is_empty() {
@@ -706,10 +716,8 @@ impl Component for Debugger {
             Msg::LoadDemo(index) => {
                 if let Some(demo) = DEMOS.get(index) {
                     self.selected_demo = Some(index);
-                    self.pending_preview = Some((
-                        format!("Demo: {}", demo.title),
-                        demo.source.to_string(),
-                    ));
+                    self.pending_preview =
+                        Some((format!("Demo: {}", demo.title), demo.source.to_string()));
                 }
                 true
             }
@@ -823,22 +831,42 @@ impl Component for Debugger {
 
         // Forth VM registers: (index, name, tooltip)
         let forth_regs: [(usize, &str, &str); 5] = [
-            (0, "W\u{2026}",   "W (r0): Work register \u{2014} scratch, holds CFA during NEXT"),
-            (2, "IP\u{2026}",  "IP (r2): Instruction Pointer \u{2014} next threaded code address"),
-            (1, "RSP\u{2026}", "RSP (r1): Return Stack Pointer \u{2014} grows down from 0x0F0000"),
-            (4, "DSP\u{2026}", "DSP (sp/r4): Data Stack Pointer \u{2014} hardware push/pop in EBR"),
-            (3, "fp\u{2026}",  "fp (r3): Frame Pointer \u{2014} available as extra scratch"),
+            (
+                0,
+                "W\u{2026}",
+                "W (r0): Work register \u{2014} scratch, holds CFA during NEXT",
+            ),
+            (
+                2,
+                "IP\u{2026}",
+                "IP (r2): Instruction Pointer \u{2014} next threaded code address",
+            ),
+            (
+                1,
+                "RSP\u{2026}",
+                "RSP (r1): Return Stack Pointer \u{2014} grows down from 0x0F0000",
+            ),
+            (
+                4,
+                "DSP\u{2026}",
+                "DSP (sp/r4): Data Stack Pointer \u{2014} hardware push/pop in EBR",
+            ),
+            (
+                3,
+                "fp\u{2026}",
+                "fp (r3): Frame Pointer \u{2014} available as extra scratch",
+            ),
         ];
         // COR24 hardware registers: (name, tooltip)
         let cpu_regs: [(&str, &str); 8] = [
-            ("r0",  "r0: General purpose register 0"),
-            ("r1",  "r1: General purpose register 1"),
-            ("r2",  "r2: General purpose register 2"),
-            ("fp",  "fp: Frame pointer"),
-            ("sp",  "sp: Stack pointer"),
-            ("z",   "z: Constant zero"),
-            ("iv",  "iv: Interrupt vector"),
-            ("ir",  "ir: Interrupt return"),
+            ("r0", "r0: General purpose register 0"),
+            ("r1", "r1: General purpose register 1"),
+            ("r2", "r2: General purpose register 2"),
+            ("fp", "fp: Frame pointer"),
+            ("sp", "sp: Stack pointer"),
+            ("z", "z: Constant zero"),
+            ("iv", "iv: Interrupt vector"),
+            ("ir", "ir: Interrupt return"),
         ];
 
         // Compute total for region bar proportions.

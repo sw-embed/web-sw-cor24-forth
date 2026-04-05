@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-04-05 — /MOD Primitive & Demo
+
+- Added `/MOD ( n1 n2 -- rem quot )` assembly primitive to `asm/forth-interpreter.s`
+  - Unsigned division via repeated subtraction (COR24 has no hardware divide)
+  - Inserted in dictionary chain between `-` and `AND`
+- Added "Division & Modulo" demo (`07-divmod.fth`) covering `/MOD`, `/`, `MOD`, and fizzbuzz-style divisibility checks
+- Applied `cargo fmt` to `src/debugger.rs` (pre-existing formatting drift)
+- Rebuilt pages/ for deployment
+
 ## 2026-03-30 — Fork Migration
 
 - Forked from [sw-vibe-coding/web-tf24a](https://github.com/sw-vibe-coding/web-tf24a)
