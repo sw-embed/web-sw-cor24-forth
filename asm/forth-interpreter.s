@@ -2620,7 +2620,7 @@ words_next:
 ; ------------------------------------------------------------
 entry_paren:
     .word entry_words
-    .byte 0xC1           ; length=1 + IMMEDIATE flag (bit 7)
+    .byte 0x81           ; length=1 + IMMEDIATE flag (bit 7)
     .byte 40             ; "("
 do_paren:
     add r1, -3
@@ -2653,7 +2653,7 @@ paren_done:
 ; ------------------------------------------------------------
 entry_backslash:
     .word entry_paren
-    .byte 0xC1           ; length=1 + IMMEDIATE flag (bit 7)
+    .byte 0x81           ; length=1 + IMMEDIATE flag (bit 7)
     .byte 92             ; "\"
 do_backslash:
     add r1, -3
@@ -2688,10 +2688,71 @@ backslash_eol:
     jmp (r0)
 
 ; ------------------------------------------------------------
+; IF ( -- ) : Begin conditional [IMMEDIATE]
+; Compile 0BRANCH + placeholder offset. Push placeholder addr.
+; ------------------------------------------------------------
+entry_if:
+    .word entry_backslash
+    .byte 0xC2           ; length=2 + IMMEDIATE
+    .byte 73, 70         ; "IF"
+do_if:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP. RS: [IP]
+    ; Compile do_zbranch at HERE
+    la r0, var_here_val
+    lw r2, 0(r0)        ; r2 = HERE
+    la r0, do_zbranch
+    sw r0, 0(r2)        ; mem[HERE] = do_zbranch
+    add r2, 3            ; HERE += 3
+    ; Compile placeholder (0) at HERE, save its address
+    add r1, -3
+    sw r2, 0(r1)        ; save placeholder addr on RS. RS: [patch_addr, IP]
+    lc r0, 0
+    sw r0, 0(r2)        ; mem[HERE] = 0 (placeholder offset)
+    add r2, 3            ; HERE += 3
+    la r0, var_here_val
+    sw r2, 0(r0)        ; update HERE
+    ; Push placeholder address onto data stack for THEN
+    lw r0, 0(r1)        ; patch_addr
+    add r1, 3           ; pop patch_addr. RS: [IP]
+    push r0              ; DS: [patch_addr]
+    lw r2, 0(r1)
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
+; THEN ( -- ) : End conditional [IMMEDIATE]
+; Pop patch address, compute offset, store it.
+; ------------------------------------------------------------
+entry_then:
+    .word entry_if
+    .byte 0xC4           ; length=4 + IMMEDIATE
+    .byte 84, 72, 69, 78 ; "THEN"
+do_then:
+    add r1, -3
+    sw r2, 0(r1)        ; save IP. RS: [IP]
+    pop r0               ; r0 = patch_addr (from IF)
+    ; Compute offset = HERE - patch_addr
+    la r2, var_here_val
+    lw r2, 0(r2)        ; r2 = HERE
+    sub r2, r0           ; r2 = offset
+    ; Store offset at patch_addr
+    sw r2, 0(r0)        ; mem[patch_addr] = offset
+    lw r2, 0(r1)
+    add r1, 3
+    ; NEXT
+    lw r0, 0(r2)
+    add r2, 3
+    jmp (r0)
+
+; ------------------------------------------------------------
 ; BYE ( -- ) : Halt the CPU
 ; ------------------------------------------------------------
 entry_bye:
-    .word entry_backslash
+    .word entry_then
     .byte 3
     .byte 66, 89, 69        ; "BYE"
 do_bye:
