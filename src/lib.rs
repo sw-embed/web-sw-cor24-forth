@@ -43,11 +43,17 @@ pub fn app() -> Html {
                 <span class="footer-sep">{"\u{00b7}"}</span>
                 <a href="https://makerlisp.com" target="_blank">{"COR24-TB"}</a>
                 <span class="footer-sep">{"\u{00b7}"}</span>
-                <span>{env!("BUILD_SHA")}</span>
+                <a href="https://software-wrighter-lab.github.io/" target="_blank">{"Blog"}</a>
                 <span class="footer-sep">{"\u{00b7}"}</span>
-                <span>{env!("BUILD_HOST")}</span>
+                <a href="https://discord.com/invite/Ctzk5uHggZ" target="_blank">{"Discord"}</a>
                 <span class="footer-sep">{"\u{00b7}"}</span>
-                <span>{env!("BUILD_TIMESTAMP")}</span>
+                <a href="https://www.youtube.com/@SoftwareWrighter" target="_blank">{"YouTube"}</a>
+                <span class="footer-sep">{"\u{00b7}"}</span>
+                <span>{ format!("{} \u{00b7} {} \u{00b7} {}",
+                    env!("BUILD_HOST"),
+                    env!("BUILD_SHA"),
+                    env!("BUILD_TIMESTAMP"),
+                ) }</span>
             </footer>
         </>
     }
