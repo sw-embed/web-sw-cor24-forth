@@ -64,15 +64,15 @@ pub const DEMOS: &[Demo] = &[
         tier: ForthTier::Interpreter,
     },
     Demo {
-        title: "Math Words",
-        description: "NEGATE, DOUBLE, TRIPLE, * multiply",
-        source: include_str!("../../sw-cor24-forth/examples/03-math.fth"),
+        title: "Loop Switch LED",
+        description: "SW? LED! in 10000-iter loop — toggle S2 while running",
+        source: include_str!("../../sw-cor24-forth/examples/13-loop-switch-led.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
-        title: "Smoke Test",
-        description: ".S, arithmetic, hex, WORDS — interpret-only",
-        source: include_str!("../../sw-cor24-forth/examples/00-smoke.fth"),
+        title: "Math Words",
+        description: "NEGATE, DOUBLE, TRIPLE, * multiply",
+        source: include_str!("../../sw-cor24-forth/examples/03-math.fth"),
         tier: ForthTier::Interpreter,
     },
     Demo {
@@ -82,8 +82,14 @@ pub const DEMOS: &[Demo] = &[
         tier: ForthTier::Interpreter,
     },
     Demo {
+        title: "Smoke Test",
+        description: ".S, arithmetic, hex, WORDS — interpret-only",
+        source: include_str!("../../sw-cor24-forth/examples/00-smoke.fth"),
+        tier: ForthTier::Interpreter,
+    },
+    Demo {
         title: "Switch \u{2192} LED",
-        description: "S2-D2! — click S2 first, then run",
+        description: "SW? LED! — click S2 first, then run",
         source: include_str!("../../sw-cor24-forth/examples/05-switch-led.fth"),
         tier: ForthTier::Interpreter,
     },

@@ -174,7 +174,11 @@ impl Debugger {
         self.program_end = result.bytes.len() as u32;
         self.dict_entries = self.build_dict_entries();
 
+        let was_switch_pressed = self.switch_pressed;
         self.emulator.hard_reset();
+        if was_switch_pressed {
+            self.emulator.set_button_pressed(true);
+        }
         self.emulator.load_program(0, &result.bytes);
         self.emulator.load_program_extent(result.bytes.len() as u32);
         self.emulator.set_pc(0);
@@ -201,7 +205,7 @@ impl Debugger {
         .iter()
         .filter_map(|name| self.labels.get(*name).copied())
         .collect();
-        self.switch_pressed = false;
+        self.switch_pressed = was_switch_pressed;
         self.selected_demo = None;
 
         // Auto-run the interpreter tier (needs to boot through test code).
