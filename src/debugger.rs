@@ -191,6 +191,12 @@ impl Debugger {
             "word_skip_rx2",
             "word_read_rx",
             "word_read_rx2",
+            "create_skip_rx",
+            "create_skip_rx2",
+            "create_read_rx",
+            "create_read_rx2",
+            "backslash_rx",
+            "paren_rx",
         ]
         .iter()
         .filter_map(|name| self.labels.get(*name).copied())
@@ -767,9 +773,6 @@ impl Component for Debugger {
                         }
                         self.uart_rx_queue.push_back(b'\n');
                     }
-                    self.running = true;
-                    self.emulator.resume();
-                    self.schedule_tick(ctx);
                 }
                 true
             }
