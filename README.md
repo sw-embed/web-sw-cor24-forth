@@ -44,6 +44,16 @@ cargo clippy -- -D warnings     # lint
 cargo fmt --all                 # format
 ```
 
+## Links
+
+- Blog: [Software Wrighter Lab](https://software-wrighter-lab.github.io/)
+- Discord: [Join the community](https://discord.com/invite/Ctzk5uHggZ)
+- YouTube: [Software Wrighter](https://www.youtube.com/@SoftwareWrighter)
+
+## Copyright
+
+Copyright (c) 2026 Michael A. Wright
+
 ## License
 
-MIT &copy; 2026 Michael A. Wright
+MIT License. See [LICENSE](LICENSE) for the full text.
