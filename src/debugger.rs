@@ -1,7 +1,7 @@
 //! Forth debugger component — COR24 emulator with Forth-aware inspection.
 
 use crate::config::{ForthTier, StackSize};
-use crate::demos::DEMOS;
+use crate::demos::FORTH_S_DEMOS as DEMOS;
 use cor24_emulator::{AssembledLine, Assembler, EmulatorCore};
 use gloo::file::File;
 use gloo::file::callbacks::FileReader;
@@ -946,7 +946,7 @@ impl Component for Debugger {
                     </button>
                     <input
                         type="file"
-                        accept=".fth,.fs,.f,.4th"
+                        accept=".fth,.fs"
                         ref={self.file_input_ref.clone()}
                         style="display:none"
                         onchange={ctx.link().callback(Msg::FileChanged)}

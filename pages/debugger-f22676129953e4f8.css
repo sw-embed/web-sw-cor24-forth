@@ -23,6 +23,75 @@
     font-weight: 400;
 }
 
+/* Top-level tabs (below header) */
+.top-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    flex-shrink: 0;
+}
+
+.top-tab {
+    background: transparent;
+    color: var(--dim);
+    border: none;
+    border-bottom: 3px solid transparent;
+    padding: 10px 22px;
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    text-transform: lowercase;
+    letter-spacing: 0.5px;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+}
+
+.top-tab:hover {
+    color: var(--text);
+}
+
+.top-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+}
+
+.tab-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    margin-left: 10px;
+    border-radius: 50%;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--dim);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: help;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    vertical-align: middle;
+}
+
+.tab-help:hover {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+}
+
+.top-tab.active .tab-help {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.top-tab.active .tab-help:hover {
+    background: var(--accent);
+    color: var(--bg);
+}
+
 /* Debugger layout */
 .debugger {
     flex: 1;
@@ -30,6 +99,20 @@
     flex-direction: column;
     overflow: hidden;
     min-height: 0;
+}
+
+/* Simplified REPL (forth-in-forth tab): output panel takes full width. */
+.repl-simple .output-panel.repl-output-panel {
+    flex: 1;
+    border-right: none;
+}
+
+.switch.switch-disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+.switch.switch-disabled:hover {
+    transform: none;
 }
 
 /* Toolbar */

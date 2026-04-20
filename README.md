@@ -12,14 +12,33 @@ Part of the [Software Wrighter COR24 Tools Project](https://sw-embed.github.io/w
 
 ## Features
 
+Two top-level tabs, each with its own demo list and a `?` help button
+describing what it provides.
+
+### Tab 1: `forth.s` — full debugger
+
 - **Interactive REPL** with UART I/O bridge to the Forth interpreter
-- **7 embedded demos**: LED Blink, Arithmetic, Stack Ops, Hex Mode, Comparison, Return Stack, Words — selectable from the dropdown
 - **Debugger controls**: Step, Step Over, Run/Pause, Reset, breakpoints (click disassembly lines)
 - **Hardware I/O panel**: visual LED D2 (glows red when lit) and clickable Switch S2
 - **Inspection panels**: CPU registers (with change highlighting), data stack, return stack, caller chain, disassembly, dictionary browser, word inspector, compile log
 - **Memory map**: visual bar showing kernel, free, return stack, and data stack regions
 - **Multi-tier assembly**: Bootstrap (Phase 1) and Interpreter (Phase 4: D2_ON!/D2_OFF!, .S, HEX, WORDS, BYE)
 - **Configurable stack**: 3 KB (hardware default) or 8 KB (full EBR window)
+- **Demo set**: smoke, colon, LED, math, stars, switch→LED, comments, /MOD, if/then, if/else, loop, fizzbuzz, self-test, switch LED loop, messy-fibonacci
+
+### Tab 2: `forth-in-forth` — self-hosting REPL
+
+- **Minimal asm kernel** from `../sw-cor24-forth/forth-in-forth/kernel.s`
+  with the rest of Forth (IF/THEN/ELSE/BEGIN/UNTIL, `\`/`(`, `.`, CR, SPACE,
+  HEX, DECIMAL, DEPTH, .S, WORDS, SEE, DUMP-ALL, NIP, TUCK, ROT, 2DUP, …)
+  defined in Forth and bootstrapped from `core/{minimal,lowlevel,midlevel,highlevel}.fth`
+  at boot
+- **Simple REPL** — Run / Stop / Reset, demo dropdown, `.fth` upload, S2+D2,
+  command history. Deliberately no step/breakpoints/registers/stacks/disasm
+- **Demo set** adds a `SEE (all words)` dictionary dump demo and two
+  side-by-side Fibonacci drivers (manual calls vs. BEGIN/UNTIL loop)
+- **UI locked during boot** with a progress indicator until the kernel
+  idles at the KEY poll
 
 ## Provenance
 

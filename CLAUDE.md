@@ -26,13 +26,16 @@ cargo fmt --all                # Format
 
 ### Key Files
 
-- `src/debugger.rs` -- Main debugger component (emulator loop, UI panels)
+- `src/lib.rs` -- App entry point with top-level tab switcher (forth.s / forth-in-forth) and per-tab `?` help dialogs
+- `src/debugger.rs` -- Tab 1: full debugger (emulator loop, inspection panels)
+- `src/repl.rs` -- Tab 2: forth-in-forth simple REPL (pump-loop UART feed, core/*.fth preload at boot)
 - `src/config.rs` -- ForthTier enum (multi-tier assembly) + StackSize
-- `src/demos.rs` -- Demo registry (embedded .fth files from ../sw-cor24-forth/examples/)
-- `asm/forth-bootstrap.s` -- Phase 1 Forth kernel (copied from sw-cor24-forth)
-- `asm/forth-interpreter.s` -- Phase 4 full interpreter (copied from sw-cor24-forth)
+- `src/demos.rs` -- Per-tab demo lists: `FORTH_S_DEMOS` (tab 1), `FIF_DEMOS` (tab 2). Some inline sources (simplified fib, DUMP-ALL); most via `include_str!` from `../sw-cor24-forth/examples/`
+- `asm/forth-bootstrap.s` -- Phase 1 Forth kernel (copied from sw-cor24-forth; used by tab 1's Bootstrap tier)
+- Tab 1 Interpreter tier reads `../sw-cor24-forth/forth.s` at compile time
+- Tab 2 reads `../sw-cor24-forth/forth-in-forth/kernel.s` + `core/*.fth` at compile time
 - `index.html` -- Entry point with high-contrast dark theme
-- `src/debugger.css` -- Debugger panel styling
+- `src/debugger.css` -- Shared styling (top-tab bar, help bubble, REPL layout, debugger panels)
 - `build.rs` -- Build script (BUILD_SHA, BUILD_HOST, BUILD_TIMESTAMP)
 - `scripts/build-pages.sh` -- Release build to pages/ for GitHub Pages
 - `.github/workflows/pages.yml` -- Deploy pages/ on push to main
