@@ -2,6 +2,7 @@ pub mod config;
 pub mod debugger;
 pub mod demos;
 pub mod repl;
+pub mod snapshot;
 
 use debugger::Debugger;
 use repl::ForthRepl;

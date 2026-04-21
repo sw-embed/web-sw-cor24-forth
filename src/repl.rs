@@ -6,6 +6,7 @@
 
 use crate::config::StackSize;
 use crate::demos::FIF_DEMOS;
+use crate::snapshot;
 use cor24_emulator::{Assembler, EmulatorCore};
 use gloo::file::File;
 use gloo::file::callbacks::FileReader;
@@ -14,17 +15,34 @@ use std::collections::{HashMap, VecDeque};
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
 
+/// Snapshot cache toggle. When false, both the build-time embedded blob
+/// and the localStorage cache are bypassed — every visit takes the slow
+/// UART bootstrap through `QUIT`. Kept off while we benchmark kernel-side
+/// perf work (e.g. XMX FIND hash in `sw-cor24-forth`) so the wall-clock
+/// we observe is purely the kernel's, not our cache's.
+const SNAPSHOT_CACHE_ENABLED: bool = false;
+
 /// Per-tick instruction budget once the REPL is interactive.
 const BATCH_SIZE: u64 = 50_000;
 /// Per-tick instruction budget while draining the core/*.fth queue. Tuned
 /// so each tick completes in ~100–200 ms of UI-thread time so the page
 /// stays responsive and the status bar keeps updating.
-const BOOTSTRAP_BATCH: u64 = 500_000;
-/// Sub-batch size for the bootstrap pump-loop. After each sub-batch we feed
-/// another UART byte (if the RX buffer is empty) so the interpreter can
-/// consume bytes as fast as it wants instead of 1 per tick.
-const PUMP_SUB_BATCH: u64 = 20_000;
-const TICK_MS: u32 = 25;
+const BOOTSTRAP_BATCH: u64 = 600_000;
+/// Adaptive pump-loop sub-batch sizes.
+///   `PUMP_TINY` is used when the CPU is spinning in a UART-poll loop with
+///   bytes still waiting in the RX queue — just enough instructions to let
+///   the CPU consume the byte we just fed and either want another or start
+///   real compile work. Anything larger is busy-waiting at ~19k instr/cheap
+///   byte, which is the single biggest source of wasted time during boot.
+///   `PUMP_BIG` is used when the CPU is doing real compile work (not at a
+///   poll address) — let it make meaningful progress between poll checks.
+const PUMP_TINY: u64 = 2_000;
+const PUMP_BIG: u64 = 50_000;
+/// Tick interval. Shorter during boot (less scheduler overhead per tick)
+/// and restored to the interactive value once ready, so steady-state idle
+/// doesn't burn CPU.
+const TICK_MS_BOOT: u32 = 5;
+const TICK_MS_INTERACTIVE: u32 = 25;
 
 /// forth-in-forth kernel source.
 const KERNEL_SRC: &str = include_str!("../../sw-cor24-forth/forth-in-forth/kernel.s");
@@ -137,9 +155,43 @@ impl ForthRepl {
         self.booted = false;
         self.uart_rx_queue.clear();
         self.waiting_for_input = false;
+        self.selected_demo = None;
+        self.switch_pressed = was_switch_pressed;
 
-        // Preload core/*.fth into the RX queue — raw bytes, LF-normalized, no trim.
-        // One newline between tiers (mirrors `cat file1 file2 | …`).
+        // Fast paths (embedded blob + localStorage) are gated on
+        // SNAPSHOT_CACHE_ENABLED so we can A/B-test kernel-side perf work
+        // without interference.
+        if SNAPSHOT_CACHE_ENABLED {
+            let hash = snapshot::content_hash(KERNEL_SRC, CORE_FILES);
+            if snapshot::restore_from_embedded(&mut self.emulator, hash) {
+                if was_switch_pressed {
+                    self.emulator.set_button_pressed(true);
+                }
+                self.booted = true;
+                self.waiting_for_input = true;
+                self.running = true;
+                self.schedule_tick(ctx);
+                return;
+            }
+            let key = snapshot::content_key(KERNEL_SRC, CORE_FILES);
+            if let Some(snap) = snapshot::load(&key)
+                && snapshot::restore(&mut self.emulator, &snap)
+            {
+                if was_switch_pressed {
+                    self.emulator.set_button_pressed(true);
+                }
+                self.booted = true;
+                self.waiting_for_input = true;
+                self.running = true;
+                self.schedule_tick(ctx);
+                return;
+            }
+        }
+
+        // Slow path: preload core/*.fth into the RX queue (raw bytes,
+        // LF-normalized, no trim, one newline between tiers) and let the
+        // kernel's QUIT loop compile each line. On completion we'll capture
+        // a snapshot so the next load takes the fast path above.
         for (i, (_name, contents)) in CORE_FILES.iter().enumerate() {
             if i > 0 && self.uart_rx_queue.back().is_none_or(|&b| b != b'\n') {
                 self.uart_rx_queue.push_back(b'\n');
@@ -155,10 +207,6 @@ impl ForthRepl {
             }
         }
 
-        self.selected_demo = None;
-        self.switch_pressed = was_switch_pressed;
-
-        // Auto-run so bootstrap drains the queue.
         self.running = true;
         self.emulator.resume();
         self.schedule_tick(ctx);
@@ -166,7 +214,12 @@ impl ForthRepl {
 
     fn schedule_tick(&mut self, ctx: &Context<Self>) {
         let link = ctx.link().clone();
-        self._tick_handle = Some(Timeout::new(TICK_MS, move || {
+        let ms = if self.booted {
+            TICK_MS_INTERACTIVE
+        } else {
+            TICK_MS_BOOT
+        };
+        self._tick_handle = Some(Timeout::new(ms, move || {
             link.send_message(Msg::Tick);
         }));
     }
@@ -246,11 +299,18 @@ impl Component for ForthRepl {
                     return false;
                 }
 
-                // Pump-loop: feed a UART byte whenever the RX buffer is clear,
-                // then run a sub-batch, repeat until the instruction budget is
-                // exhausted or the CPU is idle in a KEY poll with an empty
-                // queue. This lets bootstrap drain ~3KB of core/*.fth at
-                // interpreter speed instead of 1 byte / 25 ms.
+                // Adaptive pump-loop. Each iteration:
+                //   1. Check if the CPU is busy-waiting at a UART poll.
+                //   2. If polling with empty queue → truly done, break.
+                //   3. If polling with bytes to feed → push one byte, run
+                //      a TINY sub-batch (~2k instr, just enough for the CPU
+                //      to consume the byte and either want another or
+                //      start real compile work). This is the key win —
+                //      previously we ran ~20k between feeds, ~19.5k of
+                //      which the CPU burned spinning in key_poll waiting
+                //      for the next byte.
+                //   4. If not polling → CPU is doing real compile work,
+                //      run a BIG sub-batch to make progress.
                 let budget = if self.booted {
                     BATCH_SIZE
                 } else {
@@ -260,37 +320,41 @@ impl Component for ForthRepl {
                 let mut last_reason = cor24_emulator::StopReason::CycleLimit;
                 let mut halted = false;
                 loop {
-                    self.feed_uart_byte();
+                    let pc = self.emulator.snapshot().pc;
+                    let idle_polling = self
+                        .uart_poll_addrs
+                        .iter()
+                        .any(|&addr| pc >= addr && pc < addr + 16);
+
+                    if idle_polling && self.uart_rx_queue.is_empty() {
+                        break;
+                    }
+
+                    let chunk_size = if idle_polling {
+                        self.feed_uart_byte();
+                        PUMP_TINY
+                    } else {
+                        PUMP_BIG
+                    };
+
                     let remaining = budget.saturating_sub(instructions_used);
                     if remaining == 0 {
                         break;
                     }
-                    let chunk = remaining.min(PUMP_SUB_BATCH);
+                    let chunk = remaining.min(chunk_size);
                     let result = self.emulator.run_batch(chunk);
-                    // Safety: if the emulator is paused or otherwise not
-                    // advancing, bail out — without this we'd spin forever
-                    // and hang the UI thread.
+                    last_reason = result.reason.clone();
+                    // Safety: if the emulator isn't advancing (paused,
+                    // halted), bail out rather than spin.
                     if result.instructions_run == 0 {
-                        last_reason = result.reason.clone();
                         if matches!(last_reason, cor24_emulator::StopReason::Halted) {
                             halted = true;
                         }
                         break;
                     }
                     instructions_used += result.instructions_run;
-                    last_reason = result.reason.clone();
                     if matches!(last_reason, cor24_emulator::StopReason::Halted) {
                         halted = true;
-                        break;
-                    }
-                    // If the CPU is idle in a KEY poll and we have nothing
-                    // more to feed, stop early to save UI-thread cycles.
-                    let pc = self.emulator.snapshot().pc;
-                    let idle_polling = self
-                        .uart_poll_addrs
-                        .iter()
-                        .any(|&addr| pc >= addr && pc < addr + 16);
-                    if idle_polling && self.uart_rx_queue.is_empty() {
                         break;
                     }
                 }
@@ -309,10 +373,17 @@ impl Component for ForthRepl {
                             .iter()
                             .any(|&addr| pc >= addr && pc < addr + 16);
 
-                // First idle with empty queue = bootstrap complete.
+                // First idle with empty queue = bootstrap complete. When
+                // the snapshot cache is enabled, also save so subsequent
+                // loads take the fast path.
                 if !self.booted && self.waiting_for_input && self.uart_rx_queue.is_empty() {
                     self.booted = true;
                     self.output.clear();
+                    if SNAPSHOT_CACHE_ENABLED {
+                        let key = snapshot::content_key(KERNEL_SRC, CORE_FILES);
+                        let snap = snapshot::capture(&self.emulator);
+                        let _ = snapshot::save(&key, &snap);
+                    }
                 }
 
                 if halted {

@@ -1,5 +1,56 @@
 # Changelog
 
+## 2026-04-21 — forth-in-forth Bootstrap Speedup
+
+Boot of the forth-in-forth tab feels snappy now (was ~10+ seconds, previously
+slow enough that the UI visibly flashed through the `ok`-per-line stream).
+Speedup came from two independent fixes landing at once:
+
+**Web-side, `src/repl.rs` pump tuning:**
+
+- Pump sub-batch made **adaptive**. Previously a fixed 20k instructions
+  between UART-byte feeds, meaning the CPU spent ~19.5k cycles spinning in
+  `key_poll` waiting for the next byte on cheap-byte chars (middle-of-word
+  input). New loop inspects PC each iteration and uses a `PUMP_TINY` = 2k
+  batch when CPU is in a `key_poll` (just enough to consume a byte and
+  decide what's next) and `PUMP_BIG` = 50k when CPU is doing real compile
+  work. Kills the single biggest source of wasted time during bootstrap.
+- `BOOTSTRAP_BATCH`: 500k → 600k instructions per tick (modest bump).
+- `TICK_MS` split into `TICK_MS_BOOT` = 5 (was 25) during bootstrap and
+  `TICK_MS_INTERACTIVE` = 25 once ready. Cuts browser scheduler overhead
+  during boot without burning CPU while idle at the prompt.
+
+**Kernel-side, pulled from sw-cor24-forth** (authored by the CLI-side agent):
+
+- `forth-in-forth/kernel.s` grew a **hashed FIND** via 2-round 24-bit XMX
+  over the word name, with a 256-slot bucket table populated at `_start`
+  and kept current by `do_create` (see `sw-cor24-forth@fdae7dd`).
+- Plus a **1-entry FIND lookaside cache** in front of the hash table — the
+  last successful `do_find` result is checked first before touching the
+  bucket (see `sw-cor24-forth@4ea2f79`). Most consecutive compile-time
+  lookups target the same word (e.g. repeated `,` during IMMEDIATE words
+  like `IF`/`THEN`), so the cache-hit rate is high.
+
+**Other fixes:**
+
+- Uppercase-normalized `examples/06-comments.fth` (upstream fix — the demo
+  previously used lowercase names which `do_find` doesn't case-fold, so
+  every lookup missed and STATE got wedged in compile mode, preventing
+  subsequent demos from running).
+
+**Build-time snapshot infrastructure** (present but **disabled** at runtime
+pending CLI-side precompute work):
+
+- `build.rs` runs the full bootstrap natively after assembling the kernel,
+  captures 64 KB of low memory + registers, writes a binary blob to
+  `$OUT_DIR/fif_snapshot.bin`, `include_bytes!`d into the wasm.
+- `src/snapshot.rs`: parses the embedded blob, verifies a content-hash of
+  kernel + core files matches, restores on first visit. Also serializes a
+  cache to `localStorage` for same-browser subsequent visits.
+- `SNAPSHOT_CACHE_ENABLED: bool` gate at the top of `src/repl.rs` disables
+  both fast paths so benchmarking the kernel is uncontaminated by our cache.
+  Flip to `true` once the kernel's precompute plan lands.
+
 ## 2026-04-20 — forth-in-forth Tab
 
 - Added a second top-level tab, **forth-in-forth**, exposing the self-hosting
