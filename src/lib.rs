@@ -5,18 +5,23 @@ pub mod repl;
 pub mod snapshot;
 
 use debugger::Debugger;
-use repl::ForthRepl;
+use demos::{FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC, FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC};
+use repl::{ForthRepl, ReplProps};
 use yew::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Tab {
     ForthS,
     ForthInForth,
+    ForthOnForthish,
 }
 
 #[function_component(App)]
 pub fn app() -> Html {
-    let tab = use_state(|| Tab::ForthS);
+    // Default to the "best current" tab. Bump forward as later phases
+    // stabilize — today that's forth-in-forth (hashed FIND, near-instant
+    // boot); once forth-on-forthish is done, default to that; and so on.
+    let tab = use_state(|| Tab::ForthInForth);
     let help_open = use_state(|| None::<Tab>);
 
     let on_forth_s = {
@@ -26,6 +31,10 @@ pub fn app() -> Html {
     let on_fif = {
         let tab = tab.clone();
         Callback::from(move |_| tab.set(Tab::ForthInForth))
+    };
+    let on_fof = {
+        let tab = tab.clone();
+        Callback::from(move |_| tab.set(Tab::ForthOnForthish))
     };
     let open_forth_s_help = {
         let help_open = help_open.clone();
@@ -39,6 +48,13 @@ pub fn app() -> Html {
         Callback::from(move |e: MouseEvent| {
             e.stop_propagation();
             help_open.set(Some(Tab::ForthInForth));
+        })
+    };
+    let open_fof_help = {
+        let help_open = help_open.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            help_open.set(Some(Tab::ForthOnForthish));
         })
     };
     let close_help = {
@@ -90,11 +106,32 @@ pub fn app() -> Html {
                     <span class="tab-help" title="What's this tab?"
                           onclick={open_fif_help}>{"?"}</span>
                 </button>
+                <button class={classes!("top-tab", (active == Tab::ForthOnForthish).then_some("active"))}
+                        onclick={on_fof}>
+                    {"forth-on-forthish"}
+                    <span class="tab-help" title="What's this tab?"
+                          onclick={open_fof_help}>{"?"}</span>
+                </button>
             </div>
             // Active tab content
             { match active {
                 Tab::ForthS => html! { <Debugger /> },
-                Tab::ForthInForth => html! { <ForthRepl /> },
+                Tab::ForthInForth => html! {
+                    <ForthRepl ..ReplProps {
+                        label: "forth-in-forth",
+                        kernel_src: FIF_KERNEL_SRC,
+                        core_files: FIF_CORE_FILES,
+                        demos: FIF_DEMOS,
+                    } />
+                },
+                Tab::ForthOnForthish => html! {
+                    <ForthRepl ..ReplProps {
+                        label: "forth-on-forthish",
+                        kernel_src: FOF_KERNEL_SRC,
+                        core_files: FOF_CORE_FILES,
+                        demos: FOF_DEMOS,
+                    } />
+                },
             }}
             // Help dialog (click-outside to close)
             { match open {
@@ -121,12 +158,28 @@ pub fn app() -> Html {
                             <p>{"NIP TUCK ROT −ROT 2DUP 2DROP 2SWAP 2OVER 1+ 1− NEGATE ABS / MOD 0< ′ SEE DUMP-ALL PRINT-NAME >NAME. Plus three new asm primitives [′] EOL! SP@ needed to bootstrap the above."}</p>
                             <h3>{"Moved asm → Forth"}</h3>
                             <p>{"IF THEN ELSE BEGIN UNTIL \\ ( = 0= CR SPACE HEX DECIMAL . DEPTH .S WORDS VER. Try SEE IF to see the Forth definition."}</p>
-                            <h3>{"Still missing"}</h3>
-                            <p>{"DO LOOP ?DO I J LEAVE UNLOOP WHILE REPEAT AGAIN CONSTANT VARIABLE DOES> RECURSE MIN MAX. Tracked: "}
-                                <a href="https://github.com/sw-embed/sw-cor24-forth/issues/2" target="_blank">{"issue #2"}</a>
-                                {"."}</p>
-                            <h3>{"Trade-offs"}</h3>
-                            <p>{"Slower boot (kernel text-bootstraps the core tier); slower compile-time (IMMEDIATE words run as threaded Forth, not inline asm). Binary-compatible with all examples that forth.s runs."}</p>
+                            <h3>{"Performance"}</h3>
+                            <p>{"FIND uses a 2-round 24-bit XMX hash with a 1-entry lookaside cache (kernel) plus an adaptive-sub-batch UART pump loop (web). Boot is near-instant on typical hardware."}</p>
+                            <h3>{"Further work"}</h3>
+                            <p>{"The "}<strong>{"forth-on-forthish"}</strong>
+                                {" tab is the next step in this direction — pushing even more of the kernel down into Forth (:, ;, WORD, FIND, NUMBER, INTERPRET, QUIT). See its tab help for details."}</p>
+                            <button onclick={close_help.clone()}>{"Close"}</button>
+                        </div>
+                    </div>
+                },
+                Some(Tab::ForthOnForthish) => html! {
+                    <div class="about-overlay" onclick={close_help.clone()}>
+                        <div class="about-dialog" onclick={stop_click.clone()}>
+                            <h2>{"forth-on-forthish"}</h2>
+                            <p>{"Phase 3 of the self-hosting journey. Pushes the asm kernel down to the irreducible minimum — roughly 22 primitives — and moves everything else (including : ; WORD FIND NUMBER INTERPRET QUIT * /MOD AND OR XOR and the stack ops) into Forth. The result is a kernel so reduced that the Forth code runs on something that's already Forth-ish in shape, rather than in an asm-flavored host like forth-in-forth."}</p>
+                            <h3>{"Status"}</h3>
+                            <p>{"Subset 12 — scaffold only. The kernel is currently a byte-for-byte copy of forth-in-forth's, so behavior is identical. Subsets 13–21 land incrementally: ,DOCOL + : ; to Forth, SP@/SP!/RP@/RP! for stack ops, NAND → AND/OR/XOR, * and /MOD as loops, WORD/FIND/NUMBER/INTERPRET/QUIT to Forth."}</p>
+                            <h3>{"New asm primitives being added"}</h3>
+                            <p>{",DOCOL  SP!  RP@  RP!  NAND  WORD-BUFFER  (…)"}</p>
+                            <h3>{"Target"}</h3>
+                            <p>{"≤ 22 asm primitives, ≤ 800 lines of asm (from ~2200 in forth-in-forth); ~70 Forth colon defs. Same example set still runs. Paves the way for phase 4 (forth-from-forth) — a cross-compiler that emits exactly this primitive set."}</p>
+                            <h3>{"Source"}</h3>
+                            <p><a href="https://github.com/sw-embed/sw-cor24-forth/tree/main/forth-on-forthish" target="_blank">{"sw-cor24-forth/forth-on-forthish"}</a></p>
                             <button onclick={close_help.clone()}>{"Close"}</button>
                         </div>
                     </div>

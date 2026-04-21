@@ -1,11 +1,14 @@
-//! forth-in-forth REPL — self-hosted kernel with core/*.fth preloaded.
+//! Shared REPL component for the forth-in-forth and forth-on-forthish tabs.
 //!
-//! Boots the `forth-in-forth/kernel.s` assembly, then feeds the four core
-//! tier files into the UART RX queue so the user lands at a prompt with
-//! the full vocabulary (including `SEE`, `WORDS`, `.S`) already defined.
+//! Both tabs boot identically: assemble a kernel, feed core/*.fth tiers over
+//! UART. The kernel source, core files, and demo list are passed as
+//! `ReplProps` so one component serves both tabs. The forth.s debugger (tab 1)
+//! is a separate component (`src/debugger.rs`) — this REPL is intentionally
+//! simpler: Run/Stop/Reset + demo dropdown + file upload + LED/switch, no
+//! step / breakpoints / register-or-stack panels.
 
 use crate::config::StackSize;
-use crate::demos::FIF_DEMOS;
+use crate::demos::Demo;
 use crate::snapshot;
 use cor24_emulator::{Assembler, EmulatorCore};
 use gloo::file::File;
@@ -44,28 +47,16 @@ const PUMP_BIG: u64 = 50_000;
 const TICK_MS_BOOT: u32 = 5;
 const TICK_MS_INTERACTIVE: u32 = 25;
 
-/// forth-in-forth kernel source.
-const KERNEL_SRC: &str = include_str!("../../sw-cor24-forth/forth-in-forth/kernel.s");
-
-/// Ordered core tier files, loaded at boot.
-const CORE_FILES: &[(&str, &str)] = &[
-    (
-        "minimal",
-        include_str!("../../sw-cor24-forth/forth-in-forth/core/minimal.fth"),
-    ),
-    (
-        "lowlevel",
-        include_str!("../../sw-cor24-forth/forth-in-forth/core/lowlevel.fth"),
-    ),
-    (
-        "midlevel",
-        include_str!("../../sw-cor24-forth/forth-in-forth/core/midlevel.fth"),
-    ),
-    (
-        "highlevel",
-        include_str!("../../sw-cor24-forth/forth-in-forth/core/highlevel.fth"),
-    ),
-];
+/// Per-instance configuration. Each tab passes its own kernel source,
+/// tiered core files, curated demo list, and a short label used in the
+/// in-REPL About dialog title and status bar.
+#[derive(Properties, PartialEq, Clone)]
+pub struct ReplProps {
+    pub label: &'static str,
+    pub kernel_src: &'static str,
+    pub core_files: &'static [(&'static str, &'static str)],
+    pub demos: &'static [Demo],
+}
 
 pub enum Msg {
     Init,
@@ -114,8 +105,9 @@ pub struct ForthRepl {
 
 impl ForthRepl {
     fn load_binary(&mut self, ctx: &Context<Self>) {
+        let props = ctx.props();
         let mut asm = Assembler::new();
-        let result = asm.assemble(KERNEL_SRC);
+        let result = asm.assemble(props.kernel_src);
 
         if !result.errors.is_empty() {
             self.output = "Kernel assembly errors:\n".to_string();
@@ -162,7 +154,7 @@ impl ForthRepl {
         // SNAPSHOT_CACHE_ENABLED so we can A/B-test kernel-side perf work
         // without interference.
         if SNAPSHOT_CACHE_ENABLED {
-            let hash = snapshot::content_hash(KERNEL_SRC, CORE_FILES);
+            let hash = snapshot::content_hash(props.kernel_src, props.core_files);
             if snapshot::restore_from_embedded(&mut self.emulator, hash) {
                 if was_switch_pressed {
                     self.emulator.set_button_pressed(true);
@@ -173,7 +165,7 @@ impl ForthRepl {
                 self.schedule_tick(ctx);
                 return;
             }
-            let key = snapshot::content_key(KERNEL_SRC, CORE_FILES);
+            let key = snapshot::content_key(props.kernel_src, props.core_files);
             if let Some(snap) = snapshot::load(&key)
                 && snapshot::restore(&mut self.emulator, &snap)
             {
@@ -192,7 +184,7 @@ impl ForthRepl {
         // LF-normalized, no trim, one newline between tiers) and let the
         // kernel's QUIT loop compile each line. On completion we'll capture
         // a snapshot so the next load takes the fast path above.
-        for (i, (_name, contents)) in CORE_FILES.iter().enumerate() {
+        for (i, (_name, contents)) in props.core_files.iter().enumerate() {
             if i > 0 && self.uart_rx_queue.back().is_none_or(|&b| b != b'\n') {
                 self.uart_rx_queue.push_back(b'\n');
             }
@@ -256,7 +248,7 @@ impl ForthRepl {
 
 impl Component for ForthRepl {
     type Message = Msg;
-    type Properties = ();
+    type Properties = ReplProps;
 
     fn create(ctx: &Context<Self>) -> Self {
         ctx.link().send_message(Msg::Init);
@@ -380,7 +372,8 @@ impl Component for ForthRepl {
                     self.booted = true;
                     self.output.clear();
                     if SNAPSHOT_CACHE_ENABLED {
-                        let key = snapshot::content_key(KERNEL_SRC, CORE_FILES);
+                        let props = ctx.props();
+                        let key = snapshot::content_key(props.kernel_src, props.core_files);
                         let snap = snapshot::capture(&self.emulator);
                         let _ = snapshot::save(&key, &snap);
                     }
@@ -493,7 +486,7 @@ impl Component for ForthRepl {
             }
 
             Msg::LoadDemo(index) => {
-                if let Some(demo) = FIF_DEMOS.get(index) {
+                if let Some(demo) = ctx.props().demos.get(index) {
                     self.selected_demo = Some(index);
                     self.pending_preview =
                         Some((format!("Demo: {}", demo.title), demo.source.to_string()));
@@ -639,7 +632,7 @@ impl Component for ForthRepl {
                         <option value="" selected={self.selected_demo.is_none()}>
                             {"Demo..."}
                         </option>
-                        { for FIF_DEMOS.iter().enumerate().map(|(i, demo)| {
+                        { for ctx.props().demos.iter().enumerate().map(|(i, demo)| {
                             let sel = self.selected_demo == Some(i);
                             html! {
                                 <option value={i.to_string()} selected={sel}>
@@ -787,7 +780,7 @@ impl Component for ForthRepl {
                     </div>
                     <div class="status-item">
                         <span class="status-label">{"Kernel:"}</span>
-                        <span class="status-value">{"forth-in-forth"}</span>
+                        <span class="status-value">{ ctx.props().label }</span>
                     </div>
                     <div class="status-item">
                         <span class="status-label">{"Stack:"}</span>
@@ -804,7 +797,7 @@ impl Component for ForthRepl {
                     html! {
                         <div class="about-overlay" onclick={ctx.link().callback(|_| Msg::ToggleAbout)}>
                             <div class="about-dialog" onclick={Callback::from(|e: MouseEvent| e.stop_propagation())}>
-                                <h2>{"forth-in-forth"}</h2>
+                                <h2>{ ctx.props().label }</h2>
                                 <p>{"A self-hosting Forth: the asm kernel holds only what needs machine code, and the rest (IF/THEN/ELSE, \\ and ( comments, . CR WORDS .S SEE, ...) is defined in Forth loaded at boot."}</p>
                                 <h3>{"Try these:"}</h3>
                                 <pre>{concat!(

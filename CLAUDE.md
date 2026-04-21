@@ -26,14 +26,16 @@ cargo fmt --all                # Format
 
 ### Key Files
 
-- `src/lib.rs` -- App entry point with top-level tab switcher (forth.s / forth-in-forth) and per-tab `?` help dialogs
-- `src/debugger.rs` -- Tab 1: full debugger (emulator loop, inspection panels)
-- `src/repl.rs` -- Tab 2: forth-in-forth simple REPL (pump-loop UART feed, core/*.fth preload at boot)
+- `src/lib.rs` -- App entry point with top-level tab switcher (forth.s / forth-in-forth / forth-on-forthish) and per-tab `?` help dialogs. Default tab is forth-in-forth (the "current best" phase).
+- `src/debugger.rs` -- Tab 1: full debugger (emulator loop, inspection panels). Uses its own Properties (none).
+- `src/repl.rs` -- Shared REPL for tabs 2 and 3. Takes `ReplProps { label, kernel_src, core_files, demos }` so one component serves both tabs. Adaptive UART pump loop; core/*.fth preload at boot.
 - `src/config.rs` -- ForthTier enum (multi-tier assembly) + StackSize
-- `src/demos.rs` -- Per-tab demo lists: `FORTH_S_DEMOS` (tab 1), `FIF_DEMOS` (tab 2). Some inline sources (simplified fib, DUMP-ALL); most via `include_str!` from `../sw-cor24-forth/examples/`
+- `src/demos.rs` -- Per-tab kernel/core source constants (`FIF_*`, `FOF_*`) and demo lists (`FORTH_S_DEMOS` tab 1, `FIF_DEMOS` tab 2, `FOF_DEMOS` tab 3). FOF_DEMOS currently aliases FIF_DEMOS; break the alias if a demo applies to only one tab. Alphabetical order enforced at compile time via `assert_demos_sorted` const fn + per-list unit tests.
+- `src/snapshot.rs` -- Build-time snapshot capture + restore (localStorage + embedded blob). Gated by `SNAPSHOT_CACHE_ENABLED` in `src/repl.rs`; currently off pending kernel-side precompute work.
 - `asm/forth-bootstrap.s` -- Phase 1 Forth kernel (copied from sw-cor24-forth; used by tab 1's Bootstrap tier)
 - Tab 1 Interpreter tier reads `../sw-cor24-forth/forth.s` at compile time
 - Tab 2 reads `../sw-cor24-forth/forth-in-forth/kernel.s` + `core/*.fth` at compile time
+- Tab 3 reads `../sw-cor24-forth/forth-on-forthish/kernel.s` + `core/*.fth` at compile time
 - `index.html` -- Entry point with high-contrast dark theme
 - `src/debugger.css` -- Shared styling (top-tab bar, help bubble, REPL layout, debugger panels)
 - `build.rs` -- Build script (BUILD_SHA, BUILD_HOST, BUILD_TIMESTAMP)

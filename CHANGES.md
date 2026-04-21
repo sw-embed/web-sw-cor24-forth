@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-04-21 — forth-on-forthish Tab + New Convenience-Word Demos
+
+**New Tab 3: forth-on-forthish** — phase 3 of the self-hosting journey.
+Pushes the asm kernel down toward the irreducible minimum (~22 primitives,
+≤ 800 LOC target) by moving `:` / `;` / `WORD` / `FIND` / `NUMBER` /
+`INTERPRET` / `QUIT` / `*` / `/MOD` / stack ops into Forth. At the time of
+this commit the CLI side is at subset 13 partial (`,DOCOL` added, Forth
+`:`/`;` landing). Tab 3 reads `../sw-cor24-forth/forth-on-forthish/kernel.s`
+and `core/*.fth`; trunk will auto-rebuild as subsets land upstream.
+
+**ForthRepl component refactored** to take `ReplProps { label, kernel_src,
+core_files, demos }`. Tabs 2 and 3 now share the same component — only the
+props differ. `src/repl.rs` no longer hardcodes forth-in-forth paths.
+
+**Default tab is now forth-in-forth** (was forth.s). Convention: default to
+the "current best" phase. Bumps to forth-on-forthish when subsets 13–21
+land, then to phase 4 when that's ready.
+
+**Five new convenience-word demos** (tab 2 + tab 3 via alias), matching
+upstream `examples/15-19*.fth` added by the CLI-side agent:
+
+- **AGAIN** — BEGIN AGAIN with IF EXIT, countdown loop
+- **CONSTANT** — bind values to names (ANSWER, YEAR, UART-DATA)
+- **DO LOOP** — DO/LOOP, ?DO, I, UNLOOP with counted loops + factorial
+- **VARIABLE** — mutable cells via COUNTER / BUMP / RESET / SHOW
+- **WHILE REPEAT** — test-in-middle loop via TRIANGLE (1+2+…+n)
+
+Not added to tab 1 (`FORTH_S_DEMOS`) — forth.s's asm kernel lacks these
+words; the demos would just print `?`.
+
+**Alphabetical-order invariant** on all three demo lists
+(`FORTH_S_DEMOS`, `FIF_DEMOS`, `FOF_DEMOS`), enforced by both a
+compile-time `const assert_demos_sorted` that fails `cargo build`, and
+per-list unit tests that name which pair is out of order.
+
+**Per-tab `?` help dialogs updated**:
+
+- Tab 2 (forth-in-forth): replaced "Slower boot" trade-off (fixed by
+  the hashed FIND + lookaside + pump work) with a "Performance" section
+  crediting the kernel and web fixes. Removed the ergonomic-backlog
+  section since the CLI agent is actively adding those words. Added a
+  "Further work" pointer to tab 3.
+- Tab 3 (forth-on-forthish): new dialog describing approach, current
+  subset 13 status, target line counts, and a link to the upstream dir.
+
 ## 2026-04-21 — forth-in-forth Bootstrap Speedup
 
 Boot of the forth-in-forth tab feels snappy now (was ~10+ seconds, previously
