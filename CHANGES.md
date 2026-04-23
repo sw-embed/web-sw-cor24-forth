@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-04-22 — Remove Per-Line Δcycles / Δinstrs Output
+
+Reverted the per-command `[N cycles, M instrs]` markers I'd added in
+`src/repl.rs` for tab-2-vs-tab-3 perf comparison. In practice the
+output was noisy — at best one extra line per demo line (doubling the
+visible output), at worst several spurious lines per real line on
+tab 3 before a subsequent gating fix. The cumulative `Cycles:` /
+`Instrs:` fields in the status strip already convey the same info
+without cluttering the scroll buffer, and a reset-then-run gives a
+clean per-demo total.
+
+Removed: `last_ready_cycles` / `last_ready_instructions` /
+`last_ready_output_len` fields, their init/reset in the `reboot` and
+`create` paths, and the Δ emission block in the tick handler.
+`Instrs:` status-strip field kept.
+
+Root cause of the tab-3-only spurious output (intermittent, 4-of-5
+runs): the `just_became_ready = !was_waiting && waiting_for_input`
+transition detector depended on the PC being *outside* a UART-poll
+range on one tick and *inside* it on the next. On tab 2 the asm WORD
+sits tight in `key_poll` across char reads, so transitions only fire
+at true end-of-line. On tab 3 Forth WORD returns from a byte-read to
+do bytecode dispatch (PC outside the poll range) before calling KEY
+again (PC back at poll), so every char read produced a transition —
+exactly how many fired was race-y relative to the 60Hz tick vs the
+emulator's per-tick execution rate, hence the intermittence.
+
 ## 2026-04-22 — Footer Build Metadata Freshness
 
 Footer was displaying a stale date (`2026-04-21`) even on builds made

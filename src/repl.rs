@@ -101,11 +101,6 @@ pub struct ForthRepl {
     switch_pressed: bool,
     selected_demo: Option<usize>,
     _file_reader: Option<FileReader>,
-    /// Cumulative cycles at the last prompt-ready transition. 0 means
-    /// "haven't seen a ready state yet" (pre-boot).
-    last_ready_cycles: u64,
-    /// Cumulative instructions at the last prompt-ready transition.
-    last_ready_instructions: u64,
 }
 
 impl ForthRepl {
@@ -154,8 +149,6 @@ impl ForthRepl {
         self.waiting_for_input = false;
         self.selected_demo = None;
         self.switch_pressed = was_switch_pressed;
-        self.last_ready_cycles = 0;
-        self.last_ready_instructions = 0;
 
         // Fast paths (embedded blob + localStorage) are gated on
         // SNAPSHOT_CACHE_ENABLED so we can A/B-test kernel-side perf work
@@ -283,8 +276,6 @@ impl Component for ForthRepl {
             switch_pressed: false,
             selected_demo: None,
             _file_reader: None,
-            last_ready_cycles: 0,
-            last_ready_instructions: 0,
         }
     }
 
@@ -365,8 +356,7 @@ impl Component for ForthRepl {
                 // it right before the first interactive prompt.
                 let had_output = self.collect_uart_output();
 
-                let post_snap = self.emulator.snapshot();
-                let pc = post_snap.pc;
+                let pc = self.emulator.snapshot().pc;
                 let was_waiting = self.waiting_for_input;
                 self.waiting_for_input =
                     matches!(last_reason, cor24_emulator::StopReason::CycleLimit)
@@ -374,7 +364,6 @@ impl Component for ForthRepl {
                             .uart_poll_addrs
                             .iter()
                             .any(|&addr| pc >= addr && pc < addr + 16);
-                let just_became_ready = !was_waiting && self.waiting_for_input;
 
                 // First idle with empty queue = bootstrap complete. When
                 // the snapshot cache is enabled, also save so subsequent
@@ -388,25 +377,6 @@ impl Component for ForthRepl {
                         let snap = snapshot::capture(&self.emulator);
                         let _ = snapshot::save(&key, &snap);
                     }
-                    // Baseline for future per-command deltas. No delta
-                    // printed for the boot itself.
-                    self.last_ready_cycles = post_snap.cycles;
-                    self.last_ready_instructions = post_snap.instructions;
-                } else if just_became_ready && self.booted {
-                    // Post-boot: command just finished. Emit Δcycles/Δinstrs
-                    // so tab 2 vs tab 3 comparisons are directly visible.
-                    if self.last_ready_cycles > 0 {
-                        let cdelta = post_snap.cycles.saturating_sub(self.last_ready_cycles);
-                        let idelta = post_snap
-                            .instructions
-                            .saturating_sub(self.last_ready_instructions);
-                        if cdelta > 0 {
-                            self.output
-                                .push_str(&format!("[{} cycles, {} instrs]\n", cdelta, idelta));
-                        }
-                    }
-                    self.last_ready_cycles = post_snap.cycles;
-                    self.last_ready_instructions = post_snap.instructions;
                 }
 
                 if halted {
