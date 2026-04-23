@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-04-22 — Footer Build Metadata Freshness
+
+Footer was displaying a stale date (`2026-04-21`) even on builds made
+today. Root cause: `build.rs` captures `BUILD_SHA` / `BUILD_TIMESTAMP`
+from `git`/`date` at script-execution time, but cargo only re-runs a
+build script when one of its declared `cargo:rerun-if-changed` paths
+changes. The declared set was limited to the `forth-in-forth` kernel
++ `core/*.fth` inputs (used by the embedded-snapshot pipeline). Edits
+to `forth-on-forthish/`, `src/*.rs`, or CSS — none of which were
+tracked — recompiled the crate but did *not* re-run `build.rs`, so
+the `env!(...)` values in `src/lib.rs` stayed frozen at the last
+fif-input change.
+
+Added two more rerun triggers in `build.rs`:
+
+- `.git/HEAD` — touched on every commit / branch switch, so the
+  displayed SHA and timestamp now track the checked-out commit.
+- `forth-on-forthish/kernel.s` + the five `core/*.fth` files — edits
+  to the tab-3 tier now refresh build metadata (and leave the door
+  open for a fof snapshot path later).
+
+Tradeoff: build.rs now re-runs more often, which also triggers the
+fif snapshot rebuild (~90s at release optimization). Acceptable —
+it only happens on commits or fof edits, not on every incremental
+`cargo build`.
+
 ## 2026-04-22 — Phase 3 Complete: Tab 3 Now Default + Final Sync
 
 **Default tab flipped from forth-in-forth to forth-on-forthish.** Phase 3

@@ -47,6 +47,17 @@ fn main() {
     for (_, p) in CORE_FILES {
         println!("cargo:rerun-if-changed={p}");
     }
+    // forth-on-forthish inputs (consumed via include_str! in src/demos.rs,
+    // not by the snapshot path below). Declared here so edits in that tier
+    // rerun build.rs and refresh BUILD_SHA / BUILD_TIMESTAMP.
+    println!("cargo:rerun-if-changed=../sw-cor24-forth/forth-on-forthish/kernel.s");
+    for name in ["runtime", "minimal", "lowlevel", "midlevel", "highlevel"] {
+        println!("cargo:rerun-if-changed=../sw-cor24-forth/forth-on-forthish/core/{name}.fth");
+    }
+    // Rerun on every commit so BUILD_SHA and BUILD_TIMESTAMP in the footer
+    // stay in sync with the checked-out commit. `.git/HEAD` changes on
+    // commit, branch switch, and detached-HEAD moves.
+    println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=build.rs");
 
     emit_build_env_vars();

@@ -7,8 +7,8 @@
     <link rel="icon" href="/web-sw-cor24-forth/favicon-9fd11c61ac009410.ico" integrity="sha384-HF3w37zgbDb4R2GKg6DcyJpULmmAxM/bhw6qQaxEe+jGBFq8Qx6+izJssblYZ47p"/>
     
 <script type="module">
-import init, * as bindings from '/web-sw-cor24-forth/web-sw-cor24-forth-944d7e6348c3fb51.js';
-const wasm = await init({ module_or_path: '/web-sw-cor24-forth/web-sw-cor24-forth-944d7e6348c3fb51_bg.wasm' });
+import init, * as bindings from '/web-sw-cor24-forth/web-sw-cor24-forth-3035bddbe76edbd4.js';
+const wasm = await init({ module_or_path: '/web-sw-cor24-forth/web-sw-cor24-forth-3035bddbe76edbd4_bg.wasm' });
 
 
 window.wasmBindings = bindings;
@@ -107,7 +107,7 @@ dispatchEvent(new CustomEvent("TrunkApplicationStarted", {detail: {wasm}}));
             40%, 80% { transform: rotate(10deg); }
         }
     </style>
-<link rel="modulepreload" href="/web-sw-cor24-forth/web-sw-cor24-forth-944d7e6348c3fb51.js" crossorigin="anonymous" integrity="sha384-p/ceOPuEgwzxM8w+x08iC7xSFdK0lgBOo/lfoS3J8/6q0Av8FBn93C3ZmyE9YjRU"><link rel="preload" href="/web-sw-cor24-forth/web-sw-cor24-forth-944d7e6348c3fb51_bg.wasm" crossorigin="anonymous" integrity="sha384-mxIhH0KEOcOdk9ny0uC4H1Jpf8b/hVaWfFUdtKAYjg8miruSk2dJi4+LesszSwhs" as="fetch" type="application/wasm"></head>
+<link rel="modulepreload" href="/web-sw-cor24-forth/web-sw-cor24-forth-3035bddbe76edbd4.js" crossorigin="anonymous" integrity="sha384-p/ceOPuEgwzxM8w+x08iC7xSFdK0lgBOo/lfoS3J8/6q0Av8FBn93C3ZmyE9YjRU"><link rel="preload" href="/web-sw-cor24-forth/web-sw-cor24-forth-3035bddbe76edbd4_bg.wasm" crossorigin="anonymous" integrity="sha384-He4Wa1VoOXJH150ognRfIH8gUrrTco+KAmN0Y1ifEdS91Ui7S9Ml71X/utEowT9X" as="fetch" type="application/wasm"></head>
 <body>
     <div id="app"></div>
 </body>
