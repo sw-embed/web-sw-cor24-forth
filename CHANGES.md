@@ -1,5 +1,75 @@
 # Changelog
 
+## 2026-04-22 — Help Dialog: User Guide / Reference / Tutorial
+
+The UI previously had no in-app documentation beyond the three per-tab
+`?` About dialogs. Added a global Help dialog with three inner tabs
+covering the needs of a first-time Forth user.
+
+**New files:**
+
+- `docs/user-guide.md` — what Forth is, what the three tabs are for,
+  REPL mechanics (`ok` / `?` / comments), UI affordances (demos,
+  history, S2/D2, status strip), and exploration tips (`WORDS`,
+  `SEE`, `.S`, `DUMP-ALL`).
+- `docs/tutorial.md` — 10-step hands-on walk from `2 3 + .` through
+  stack manipulation, colon defs, `IF/THEN/ELSE`, `DO/LOOP`,
+  `BEGIN/UNTIL`, variables/constants, `SEE` on your own words, base
+  conversion, and `LED!` / `SW?` hardware I/O.
+- `docs/reference.md` — every word across fif+fof kernels and core
+  tiers, grouped by category (Stack, Arithmetic, Logic, Comparison,
+  Return stack, Memory, Control, Runtime primitives, Compilation,
+  Interpreter, I/O, Hardware, Introspection, Comments, System) with a
+  top-of-page A–Z index. Tab-specific words are tagged.
+- `src/help.rs` — new `Help` function component. Renders the embedded
+  markdown through `pulldown-cmark` (tables + strikethrough enabled)
+  and injects the resulting HTML via `Html::from_html_unchecked`. The
+  md files are the source of truth and remain browsable on GitHub.
+
+**Help button placement.** Lives in each tab's toolbar next to the
+existing `About` button (orange-accented `.help-btn` sibling of
+`.about-btn`). The first attempt put it in the header top-right, but
+the `github-corner` SVG is `position: absolute; top: 0; right: 0;
+z-index: 100` and was intercepting clicks — put Help in the toolbar
+and the octocat stays out of the way.
+
+**Dismissal** matches the `?` dialog trio: X button in the corner,
+Esc key, and click-outside. Existing `use_effect_with` keydown
+listener in `App` extended to close either kind of dialog.
+
+**`.help-md` styles** cover headings, tables, inline code, code
+blocks, lists, links, and `<hr>`, scoped so doc HTML doesn't bleed
+into the rest of the app.
+
+## 2026-04-22 — Test: Every Kernel Word Documented
+
+New `help::tests::every_kernel_word_is_documented` unit test guards
+against "added a word, forgot the docs" drift:
+
+- Parses `entry_XXX:` dict blocks in `../sw-cor24-forth/forth-in-forth/
+  kernel.s` and `../sw-cor24-forth/forth-on-forthish/kernel.s`,
+  decoding each name via `flags_len & 0x3F` + the following
+  comma-separated `.byte` list.
+- Parses colon defs (`: WORD ...` at line start) from every
+  `core/*.fth` in both tiers.
+- Checks that each discovered word appears inside backticks in
+  `docs/reference.md` (either opening ``\`WORD \`` or fully bracketed
+  ``\`WORD\``). Loose enough to survive format churn, tight enough
+  to avoid matching English words like "and".
+- Sanity-guards with `all.len() > 50` so a silently-broken extractor
+  doesn't pass the test vacuously.
+
+Failure message lists the specific missing word(s), so next time
+a primitive is added upstream the fix is just "write its reference
+entry".
+
+## 2026-04-22 — Dep: pulldown-cmark for Help rendering
+
+`pulldown-cmark = "0.11"` added (default-features off, `html` feature
+only) to render docs/*.md → HTML inside the Help dialog. Pure-Rust
+CommonMark parser, no regex or other heavy deps; compiled wasm size
+impact is modest. Tables + strikethrough extensions enabled.
+
 ## 2026-04-22 — Remove Per-Line Δcycles / Δinstrs Output
 
 Reverted the per-command `[N cycles, M instrs]` markers I'd added in

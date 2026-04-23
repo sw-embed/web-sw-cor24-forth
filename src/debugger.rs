@@ -26,6 +26,13 @@ pub enum BottomTab {
     CompileLog,
 }
 
+#[derive(Properties, PartialEq, Clone)]
+pub struct DebuggerProps {
+    /// Opens the global Help dialog (User Guide / Reference / Tutorial).
+    /// Fired by the "Help" button in the debugger toolbar.
+    pub on_open_help: Callback<()>,
+}
+
 /// Categorized Forth word entry from assembler labels.
 #[derive(Clone)]
 struct DictEntry {
@@ -476,7 +483,7 @@ impl Debugger {
 
 impl Component for Debugger {
     type Message = Msg;
-    type Properties = ();
+    type Properties = DebuggerProps;
 
     fn create(ctx: &Context<Self>) -> Self {
         ctx.link().send_message(Msg::Init);
@@ -956,6 +963,9 @@ impl Component for Debugger {
                     </button>
                     <button class="about-btn" onclick={ctx.link().callback(|_| Msg::ToggleAbout)}>
                         {"About"}
+                    </button>
+                    <button class="help-btn" onclick={ctx.props().on_open_help.reform(|_| ())}>
+                        {"Help"}
                     </button>
                 </div>
 

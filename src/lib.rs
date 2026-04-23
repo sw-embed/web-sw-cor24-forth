@@ -1,12 +1,14 @@
 pub mod config;
 pub mod debugger;
 pub mod demos;
+pub mod help;
 pub mod repl;
 pub mod snapshot;
 
 use debugger::Debugger;
 use demos::{FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC, FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC};
 use gloo::events::EventListener;
+use help::Help;
 use repl::{ForthRepl, ReplProps};
 use wasm_bindgen::JsCast;
 use web_sys::KeyboardEvent;
@@ -26,6 +28,7 @@ pub fn app() -> Html {
     // INTERPRET/QUIT live in Forth, driven via QUIT-VECTOR handoff).
     let tab = use_state(|| Tab::ForthOnForthish);
     let help_open = use_state(|| None::<Tab>);
+    let global_help_open = use_state(|| false);
 
     let on_forth_s = {
         let tab = tab.clone();
@@ -64,26 +67,45 @@ pub fn app() -> Html {
         let help_open = help_open.clone();
         Callback::from(move |_| help_open.set(None))
     };
+    let open_global_help: Callback<()> = {
+        let global_help_open = global_help_open.clone();
+        let help_open = help_open.clone();
+        Callback::from(move |_: ()| {
+            help_open.set(None);
+            global_help_open.set(true);
+        })
+    };
+    let close_global_help = {
+        let global_help_open = global_help_open.clone();
+        Callback::from(move |_| global_help_open.set(false))
+    };
     let stop_click = Callback::from(|e: MouseEvent| e.stop_propagation());
 
-    // Esc-to-close: attach a document-level keydown listener only while a
-    // dialog is open. `EventListener` detaches on drop (RAII), so the
-    // cleanup returned below unbinds it when the dialog closes or the
-    // component unmounts.
+    // Esc-to-close: attach a document-level keydown listener only while
+    // SOME dialog (per-tab `?` or global Help) is open. `EventListener`
+    // detaches on drop (RAII), so the cleanup returned below unbinds it
+    // when all dialogs close or the component unmounts.
     {
         let help_open = help_open.clone();
-        use_effect_with(*help_open, move |is_open| {
-            let listener = is_open.and_then(|_| {
-                let doc = web_sys::window()?.document()?;
-                let close_on_esc = help_open.clone();
-                Some(EventListener::new(&doc, "keydown", move |e| {
-                    if let Some(ke) = e.dyn_ref::<KeyboardEvent>()
-                        && ke.key() == "Escape"
-                    {
-                        close_on_esc.set(None);
-                    }
-                }))
-            });
+        let global_help_open = global_help_open.clone();
+        let any_open = help_open.is_some() || *global_help_open;
+        use_effect_with(any_open, move |&is_open| {
+            let listener = if is_open {
+                web_sys::window().and_then(|w| w.document()).map(|doc| {
+                    let close_tab_help = help_open.clone();
+                    let close_global = global_help_open.clone();
+                    EventListener::new(&doc, "keydown", move |e| {
+                        if let Some(ke) = e.dyn_ref::<KeyboardEvent>()
+                            && ke.key() == "Escape"
+                        {
+                            close_tab_help.set(None);
+                            close_global.set(false);
+                        }
+                    })
+                })
+            } else {
+                None
+            };
             move || drop(listener)
         });
     }
@@ -140,13 +162,14 @@ pub fn app() -> Html {
             </div>
             // Active tab content
             { match active {
-                Tab::ForthS => html! { <Debugger /> },
+                Tab::ForthS => html! { <Debugger on_open_help={open_global_help.clone()} /> },
                 Tab::ForthInForth => html! {
                     <ForthRepl ..ReplProps {
                         label: "forth-in-forth",
                         kernel_src: FIF_KERNEL_SRC,
                         core_files: FIF_CORE_FILES,
                         demos: FIF_DEMOS,
+                        on_open_help: open_global_help.clone(),
                     } />
                 },
                 Tab::ForthOnForthish => html! {
@@ -155,6 +178,7 @@ pub fn app() -> Html {
                         kernel_src: FOF_KERNEL_SRC,
                         core_files: FOF_CORE_FILES,
                         demos: FOF_DEMOS,
+                        on_open_help: open_global_help.clone(),
                     } />
                 },
             }}
@@ -226,6 +250,12 @@ pub fn app() -> Html {
                     </div>
                 },
                 None => html! {},
+            }}
+            // Global Help dialog (User Guide / Reference / Tutorial)
+            { if *global_help_open {
+                html! { <Help on_close={close_global_help} /> }
+            } else {
+                html! {}
             }}
             // Footer
             <footer>

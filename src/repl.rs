@@ -56,6 +56,9 @@ pub struct ReplProps {
     pub kernel_src: &'static str,
     pub core_files: &'static [(&'static str, &'static str)],
     pub demos: &'static [Demo],
+    /// Opens the global Help dialog (User Guide / Reference / Tutorial).
+    /// Fired by the "Help" button in the REPL toolbar.
+    pub on_open_help: Callback<()>,
 }
 
 pub enum Msg {
@@ -669,6 +672,10 @@ impl Component for ForthRepl {
                     <button class="about-btn"
                             onclick={ctx.link().callback(|_| Msg::ToggleAbout)}>
                         {"About"}
+                    </button>
+                    <button class="help-btn"
+                            onclick={ctx.props().on_open_help.reform(|_| ())}>
+                        {"Help"}
                     </button>
                 </div>
 

@@ -14,7 +14,9 @@ Part of the [Software Wrighter COR24 Tools Project](https://sw-embed.github.io/w
 
 Three top-level tabs, each with its own demo list and a `?` help button
 describing what it provides. Default is `forth-on-forthish` (phase 3, the
-"current best" self-hosting tier).
+"current best" self-hosting tier). A **Help** button in every tab's
+toolbar opens a global dialog with **User Guide**, **Reference**, and
+**Tutorial** sections — all sourced from `docs/*.md`.
 
 ### Tab 1: `forth.s` — full debugger
 
