@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-04-22 — Fix Stale Footer Timestamp (build.rs Rerun Trigger)
+
+Yesterday's fix for the stale footer date (the `.git/HEAD` rerun-trigger
+fix in 5295bff) was **itself wrong** — `.git/HEAD` is a *symbolic
+pointer* like `ref: refs/heads/main` whose content and mtime only change
+on branch switches / detached-HEAD moves. Regular commits *do not* touch
+`.git/HEAD`; they update `.git/refs/heads/<branch>` and append to
+`.git/logs/HEAD`. So the previous trigger never fired after a commit,
+and the footer timestamp was still stale — the deployed wasm had
+`BUILD_TIMESTAMP=2026-04-23T02:46Z` baked in even after three later
+commits.
+
+Swapped `build.rs` to watch `.git/logs/HEAD` instead: the reflog
+appends a line on every ref update (commit, checkout, pull, reset, …),
+is branch-agnostic, and its mtime always reflects "last repo state
+change". Verified: fresh `build-pages` run baked
+`BUILD_TIMESTAMP=2026-04-23T04:16:45Z` into the wasm, matching the
+actual build wall-clock.
+
+Same lesson for anyone touching this again: `.git/HEAD` is a *ref
+declaration*, not a *ref log*. Want "fires on every commit"? Use
+`.git/logs/HEAD`.
+
+## 2026-04-22 — README Screenshot Cache-Bust
+
+Bumped the `?ts=` query param on `images/screenshot.png` in README.md
+(1774477179000 → 1776917745967) so viewers of the GitHub page pull a
+fresh copy if the file has been updated. File-mtime-based timestamps
+would be more honest but arbitrary current-epoch-ms does the job.
+
 ## 2026-04-22 — Help Dialog: User Guide / Reference / Tutorial
 
 The UI previously had no in-app documentation beyond the three per-tab

@@ -55,9 +55,12 @@ fn main() {
         println!("cargo:rerun-if-changed=../sw-cor24-forth/forth-on-forthish/core/{name}.fth");
     }
     // Rerun on every commit so BUILD_SHA and BUILD_TIMESTAMP in the footer
-    // stay in sync with the checked-out commit. `.git/HEAD` changes on
-    // commit, branch switch, and detached-HEAD moves.
-    println!("cargo:rerun-if-changed=.git/HEAD");
+    // stay in sync with the checked-out commit. `.git/HEAD` is a symbolic
+    // pointer (`ref: refs/heads/main`) whose mtime only changes on branch
+    // switches — it does NOT update on commits. `.git/logs/HEAD` is the
+    // reflog, which appends a line on every ref update (commit, checkout,
+    // pull, reset, …) — branch-agnostic and always fresh.
+    println!("cargo:rerun-if-changed=.git/logs/HEAD");
     println!("cargo:rerun-if-changed=build.rs");
 
     emit_build_env_vars();
