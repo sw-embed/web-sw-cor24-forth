@@ -26,7 +26,7 @@ cargo fmt --all                # Format
 
 ### Key Files
 
-- `src/lib.rs` -- App entry point with top-level tab switcher (forth.s / forth-in-forth / forth-on-forthish) and per-tab `?` help dialogs. Default tab is forth-in-forth (the "current best" phase).
+- `src/lib.rs` -- App entry point with top-level tab switcher (forth.s / forth-in-forth / forth-on-forthish) and per-tab `?` help dialogs. Default tab is forth-on-forthish (phase 3 complete — Forth INTERPRET/QUIT).
 - `src/debugger.rs` -- Tab 1: full debugger (emulator loop, inspection panels). Uses its own Properties (none).
 - `src/repl.rs` -- Shared REPL for tabs 2 and 3. Takes `ReplProps { label, kernel_src, core_files, demos }` so one component serves both tabs. Adaptive UART pump loop; core/*.fth preload at boot.
 - `src/config.rs` -- ForthTier enum (multi-tier assembly) + StackSize

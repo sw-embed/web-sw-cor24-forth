@@ -12,8 +12,9 @@ Part of the [Software Wrighter COR24 Tools Project](https://sw-embed.github.io/w
 
 ## Features
 
-Two top-level tabs, each with its own demo list and a `?` help button
-describing what it provides.
+Three top-level tabs, each with its own demo list and a `?` help button
+describing what it provides. Default is `forth-on-forthish` (phase 3, the
+"current best" self-hosting tier).
 
 ### Tab 1: `forth.s` — full debugger
 
@@ -39,6 +40,23 @@ describing what it provides.
   side-by-side Fibonacci drivers (manual calls vs. BEGIN/UNTIL loop)
 - **UI locked during boot** with a progress indicator until the kernel
   idles at the KEY poll
+
+### Tab 3: `forth-on-forthish` — phase 3 self-hosting (default)
+
+- **Same REPL shell as tab 2**, but running a minimized kernel from
+  `../sw-cor24-forth/forth-on-forthish/` where `:` `;` `WORD` `FIND`
+  `NUMBER` `INTERPRET` `QUIT` plus all stack ops and `*` `/MOD` `AND`
+  `OR` `XOR` have been moved out of asm and into Forth
+- **Core load order**: `runtime → minimal → lowlevel → midlevel →
+  highlevel`. `runtime.fth` supplies the Forth `:` `;` + stack ops
+  that later tiers compile against; `highlevel.fth` ends by installing
+  Forth `QUIT` via a `QUIT-VECTOR` handoff
+- **Forth-driven REPL**: after boot, every prompt line runs through
+  Forth `INTERPRET`/`QUIT`, not asm. The asm bootstrap never resumes
+- **Chattier boot log** (~22 extra `ok` lines during `highlevel.fth`
+  load) is expected — Forth `INTERPRET` echoes per line
+- **Per-command Δcycles / Δinstrs** reported after each prompt for
+  easy tab-2-vs-tab-3 performance comparison
 
 ## Provenance
 

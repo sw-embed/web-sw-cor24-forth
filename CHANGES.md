@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-04-22 — Phase 3 Complete: Tab 3 Now Default + Final Sync
+
+**Default tab flipped from forth-in-forth to forth-on-forthish.** Phase 3
+is done upstream (subsets 12–21 all landed), so the "current best" tab
+convention bumps forward. `src/lib.rs:24` + `CLAUDE.md` updated.
+
+**Final upstream sync (subset 19 → 21 + phase-4 kickoff):**
+
+- Subset 20 (commit 1c44e0d): `INTERPRET` and `QUIT` moved to Forth in
+  `core/highlevel.fth`. A new `QUIT-VECTOR` asm primitive exposes the
+  address of a cell holding the installed Forth `QUIT` CFA. Once
+  `highlevel.fth` finishes loading, it installs Forth `QUIT` and the
+  asm bootstrap hands off — every subsequent prompt line flows through
+  Forth code, not asm.
+- Subset 21 (commit 3970152): reg-rs baseline re-widened
+  (`grep -A 100` → `-A 250`) to capture fib output past the ~22 extra
+  " ok" lines emitted during Forth-INTERPRET-driven `highlevel.fth`
+  load. Web-visible effect: tab 3's boot log is chattier now.
+- Phase 4 kickoff (commit f7697b2): `forth-from-forth` agentrail
+  saga — out of scope for this tab.
+
+**Observable boot/runtime differences on tab 3:**
+
+- ~22 more " ok" lines during core-tiers load (Forth INTERPRET echoes
+  per line where the asm bootstrap was silent).
+- Kernel 2630 → 2659 lines (+29, not the −180 originally planned).
+  The asm bootstrap still needs STATE/IMMEDIATE/compile-mode to parse
+  `runtime.fth`, and the three big asm bodies (`do_word` ~140,
+  `do_find` ~250, `do_number` ~190) must stay alive for bootstrap
+  address refs. Shrinking further needs a cross-compiled kernel or
+  pre-compiled dict image — deferred to phase 4.
+- One new user-visible word: `QUIT-VECTOR` (variable, inspectable via
+  `SEE` / `@`).
+- No new demos — upstream `examples/` unchanged since `19-do-loop.fth`,
+  which was already wired into `FOF_DEMOS` via the `FIF_DEMOS` alias.
+
+**Tab-3 `?` dialog rewritten** for phase-3-complete state. New
+sections: "Status — phase 3 complete", "Moved asm → Forth (vs
+forth-in-forth)", "New asm primitives" (now includes `QUIT-VECTOR`),
+"Phase-3 honest note" on why the ≤800 asm-line target is deferred.
+Removed the stale "work-in-progress upstream" hint.
+
+**pages/ bundle refreshed** for GitHub Pages deployment.
+
 ## 2026-04-22 — forth-on-forthish Sync Through Subset 19 + Dialog UX Fixes
 
 **Tab 3 synced with upstream through subset 19** (upstream HEAD 62daabb,

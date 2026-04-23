@@ -22,9 +22,9 @@ enum Tab {
 #[function_component(App)]
 pub fn app() -> Html {
     // Default to the "best current" tab. Bump forward as later phases
-    // stabilize — today that's forth-in-forth (hashed FIND, near-instant
-    // boot); once forth-on-forthish is done, default to that; and so on.
-    let tab = use_state(|| Tab::ForthInForth);
+    // stabilize — today that's forth-on-forthish (phase 3 complete:
+    // INTERPRET/QUIT live in Forth, driven via QUIT-VECTOR handoff).
+    let tab = use_state(|| Tab::ForthOnForthish);
     let help_open = use_state(|| None::<Tab>);
 
     let on_forth_s = {
@@ -208,15 +208,18 @@ pub fn app() -> Html {
                             <div class="about-content">
                                 <h2>{"forth-on-forthish"}</h2>
                                 <p>{"Phase 3 of the self-hosting journey. Pushes the asm kernel down toward the irreducible minimum — roughly 22 primitives — and moves everything else (including : ; WORD FIND NUMBER INTERPRET QUIT * /MOD AND OR XOR and the stack ops) into Forth. The result is a kernel so reduced that the Forth code runs on something that's already Forth-ish in shape, rather than in an asm-flavored host like forth-in-forth."}</p>
-                                <h3>{"Status"}</h3>
-                                <p>{"Subsets 13–19 done: : ; DUP DROP OVER SWAP R@ INVERT AND OR XOR NEGATE − * /MOD WORD FIND NUMBER and helpers (PICK, DIGIT-VALUE, STR=) all live in Forth now. New asm primitives: ,DOCOL SP@ SP! RP@ NAND WORD-BUFFER EOL-FLAG. Kernel down from 2758 → 2630 lines (−128); Forth tiers up from 229 → 403. Subsets 20–21 remaining: INTERPRET / QUIT to Forth — unblocks deleting the do_word / do_find / do_number bodies (~580 asm lines) still kept for address-refs, plus the monolithic interpret/quit (~280 more)."}</p>
+                                <h3>{"Status — phase 3 complete"}</h3>
+                                <p>{"Subsets 12–21 all done. The REPL itself is now Forth: after the core tiers load, control transfers via QUIT-VECTOR to a Forth INTERPRET / QUIT loop in highlevel.fth, and every subsequent prompt line flows through Forth code — not asm. The portable surface (Forth INTERPRET/QUIT) is what migrates unchanged to RCA1802 / IBM 1130 / IBM 360 targets in future phases; only the asm primitives get retargeted."}</p>
+                                <h3>{"Moved asm → Forth (vs forth-in-forth)"}</h3>
+                                <p>{": ; DUP DROP OVER SWAP R@ INVERT AND OR XOR NEGATE − * /MOD WORD FIND NUMBER INTERPRET QUIT, plus helpers PICK, DIGIT-VALUE, STR=."}</p>
+                                <h3>{"New asm primitives"}</h3>
+                                <p>{",DOCOL  SP@  SP!  RP@  NAND  WORD-BUFFER  EOL-FLAG  QUIT-VECTOR. Kernel: 2758 → 2659 lines (−99). Forth tiers: 229 → 450 (+221)."}</p>
                                 <h3>{"Core tiers (load order)"}</h3>
-                                <p>{"runtime → minimal → lowlevel → midlevel → highlevel. The new runtime tier loads first and supplies the Forth-level stack ops + : ; that later tiers compile against."}</p>
-                                <h3>{"Target"}</h3>
-                                <p>{"≤ 22 asm primitives, ≤ 800 lines of asm (from ~2200 in forth-in-forth); ~70 Forth colon defs. Same example set still runs. Paves the way for phase 4 (forth-from-forth) — a cross-compiler that emits exactly this primitive set."}</p>
+                                <p>{"runtime → minimal → lowlevel → midlevel → highlevel. runtime.fth loads first and supplies the Forth : ; + stack ops that later tiers compile against; highlevel.fth ends by installing Forth QUIT and handing off."}</p>
+                                <h3>{"Phase-3 honest note"}</h3>
+                                <p>{"The original ≤800 asm-line target isn't realistic here — do_word / do_find / do_number (~580 lines) must stay for bootstrap, and the asm bootstrap still needs STATE/IMMEDIATE/compile-mode to parse runtime.fth. Further shrinkage is deferred to phase 4 (forth-from-forth): a cross-compiled kernel, or a pre-compiled dictionary image that lets the asm bootstrap drop the big helpers."}</p>
                                 <h3>{"Source"}</h3>
                                 <p><a href="https://github.com/sw-embed/sw-cor24-forth/tree/main/forth-on-forthish" target="_blank">{"sw-cor24-forth/forth-on-forthish"}</a></p>
-                                <p class="about-hint">{"Note: this tab tracks work-in-progress upstream; builds can be briefly broken during subset transitions."}</p>
                                 <button onclick={close_help.clone()}>{"Close"}</button>
                             </div>
                         </div>
