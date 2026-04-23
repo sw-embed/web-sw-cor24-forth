@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-04-22 — Refresh README Screenshot
+
+Replaced `images/screenshot.png` with a fresh capture of the current
+UI — tab 3 (forth-on-forthish, the default) active, full `WORDS`
+output visible, Help button sitting next to About, footer showing
+current commit SHA + timestamp. Previous image was a March capture
+from before tabs 2/3 + the Help dialog existed.
+
+Captured via Playwright (chromium, 1400×900, headless) pointed at
+the local dev server; input filled with `WORDS`, Enter submitted,
+screenshot taken after the kernel finished producing output.
+
+Also bumped the `?ts=` cache-bust on the README `<img>` URL
+(1776917745967 → 1776918570363) and updated the alt text from
+"Stack Ops demo running in the debugger" to "forth-on-forthish tab
+with WORDS output" so it reflects what the image actually shows.
+
 ## 2026-04-22 — Fix Stale Footer Timestamp (build.rs Rerun Trigger)
 
 Yesterday's fix for the stale footer date (the `.git/HEAD` rerun-trigger

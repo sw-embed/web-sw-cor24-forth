@@ -8,7 +8,7 @@ Type Forth commands, step through threaded code, inspect stacks and registers, a
 
 Part of the [Software Wrighter COR24 Tools Project](https://sw-embed.github.io/web-sw-cor24-demos/#/).
 
-![Stack Ops demo running in the debugger](images/screenshot.png?ts=1776917745967)
+![forth-on-forthish tab with WORDS output](images/screenshot.png?ts=1776918570363)
 
 ## Features
 
