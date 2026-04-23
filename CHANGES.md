@@ -1,5 +1,49 @@
 # Changelog
 
+## 2026-04-22 — forth-on-forthish Sync Through Subset 19 + Dialog UX Fixes
+
+**Tab 3 synced with upstream through subset 19** (upstream HEAD 62daabb,
+`feat(forth-on-forthish): subset 19 — NUMBER → Forth, DIGIT-VALUE helper`).
+Kernel.s and core/*.fth are `include_str!`'d so they refresh on rebuild;
+no source changes needed for kernel content. Status paragraph in the
+tab 3 `?` dialog refreshed from "Subset 13 done" to reflect that subsets
+13–19 are all in (: ; DUP DROP OVER SWAP R@ INVERT AND OR XOR NEGATE
+− * /MOD WORD FIND NUMBER + helpers PICK / DIGIT-VALUE / STR= now in
+Forth; asm primitives ,DOCOL SP@ SP! RP@ NAND WORD-BUFFER EOL-FLAG
+added; kernel 2758 → 2630 lines, −128).
+
+**New `core/runtime.fth` tier** wired into `FOF_CORE_FILES` as the
+first-loaded core file (before minimal). This tier holds the Forth
+definitions of `:` / `;` / stack ops that depend on the new `,DOCOL`
+/ `SP@` / `SP!` / `RP@` / `NAND` primitives, and must load before
+the other tiers can compile. Tab 2 (forth-in-forth) unchanged — its
+core tiers remain minimal / lowlevel / midlevel / highlevel.
+
+**Per-command Δcycles / Δinstrs output.** After the first idle-prompt
+is reached (boot complete), every subsequent return-to-prompt emits
+`[N cycles, M instrs]` — tracking the deltas between prompt-ready
+transitions. Makes tab 2 vs tab 3 performance comparisons directly
+visible without having to eyeball the running cycle counter. No delta
+printed for the boot itself (baseline only).
+
+**New `Instrs:` field in the status strip**, alongside the existing
+`Cycles:` readout. Cheap — emulator snapshot already carried it.
+
+**`?` help dialogs — three fixes:**
+
+- **Dismissal.** Three ways now: X button in the top-right corner,
+  Esc key, or click outside the dialog (outside was already working;
+  X and Esc are new). Esc binds a document-level `keydown` listener
+  only while a dialog is open, via `use_effect_with` + `gloo::events::
+  EventListener` (RAII cleanup on close).
+- **Width.** `max-width: 500px` → `width: min(720px, 92vw)`. Prose
+  was wrapping too tightly on the tab-3 Status paragraph.
+- **Scrolling.** Dialog is now a non-scrolling shell containing an
+  inner `.about-content` scroll region, so the X button stays pinned
+  in the corner even when the body scrolls. Previous behavior: tab
+  3's dialog grew taller than the viewport, leaving its body cropped
+  top and bottom and the Close button unreachable.
+
 ## 2026-04-21 — forth-on-forthish Tab + New Convenience-Word Demos
 
 **New Tab 3: forth-on-forthish** — phase 3 of the self-hosting journey.

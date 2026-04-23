@@ -6,7 +6,10 @@ pub mod snapshot;
 
 use debugger::Debugger;
 use demos::{FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC, FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC};
+use gloo::events::EventListener;
 use repl::{ForthRepl, ReplProps};
+use wasm_bindgen::JsCast;
+use web_sys::KeyboardEvent;
 use yew::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -62,6 +65,28 @@ pub fn app() -> Html {
         Callback::from(move |_| help_open.set(None))
     };
     let stop_click = Callback::from(|e: MouseEvent| e.stop_propagation());
+
+    // Esc-to-close: attach a document-level keydown listener only while a
+    // dialog is open. `EventListener` detaches on drop (RAII), so the
+    // cleanup returned below unbinds it when the dialog closes or the
+    // component unmounts.
+    {
+        let help_open = help_open.clone();
+        use_effect_with(*help_open, move |is_open| {
+            let listener = is_open.and_then(|_| {
+                let doc = web_sys::window()?.document()?;
+                let close_on_esc = help_open.clone();
+                Some(EventListener::new(&doc, "keydown", move |e| {
+                    if let Some(ke) = e.dyn_ref::<KeyboardEvent>()
+                        && ke.key() == "Escape"
+                    {
+                        close_on_esc.set(None);
+                    }
+                }))
+            });
+            move || drop(listener)
+        });
+    }
 
     let active = *tab;
     let open = *help_open;
@@ -138,49 +163,62 @@ pub fn app() -> Html {
                 Some(Tab::ForthS) => html! {
                     <div class="about-overlay" onclick={close_help.clone()}>
                         <div class="about-dialog" onclick={stop_click.clone()}>
-                            <h2>{"forth.s"}</h2>
-                            <p>{"Full hand-written asm Forth kernel (~3000 lines). Loaded as a single binary. Rich debugger UI: VM registers, data/return stacks, disassembly, dictionary inspector, step/step-over, breakpoints, compile log."}</p>
-                            <h3>{"Core words (asm primitives)"}</h3>
-                            <p>{"+ − ∗ /MOD AND OR XOR = < 0= DUP DROP SWAP OVER >R R> R@ @ ! C@ C! EXECUTE IF THEN ELSE BEGIN UNTIL : ; IMMEDIATE [ ] CREATE , C, ALLOT HERE LATEST STATE BASE . CR SPACE HEX DECIMAL WORDS .S DEPTH VER EMIT KEY LED! SW? \\ ( FIND WORD NUMBER INTERPRET QUIT"}</p>
-                            <h3>{"Missing (compared to forth-in-forth)"}</h3>
-                            <p>{"NIP TUCK ROT 2DUP 2DROP 2SWAP 2OVER 1+ 1− NEGATE ABS / MOD 0< ′ (tick) SEE DUMP-ALL PRINT-NAME >NAME SP@ [′] EOL!"}</p>
-                            <p class="about-hint">{"Demos that need these words (e.g. Fibonacci) define them inline."}</p>
-                            <button onclick={close_help.clone()}>{"Close"}</button>
+                            <button class="about-close" aria-label="Close"
+                                    onclick={close_help.clone()}>{"\u{00d7}"}</button>
+                            <div class="about-content">
+                                <h2>{"forth.s"}</h2>
+                                <p>{"Full hand-written asm Forth kernel (~3000 lines). Loaded as a single binary. Rich debugger UI: VM registers, data/return stacks, disassembly, dictionary inspector, step/step-over, breakpoints, compile log."}</p>
+                                <h3>{"Core words (asm primitives)"}</h3>
+                                <p>{"+ − ∗ /MOD AND OR XOR = < 0= DUP DROP SWAP OVER >R R> R@ @ ! C@ C! EXECUTE IF THEN ELSE BEGIN UNTIL : ; IMMEDIATE [ ] CREATE , C, ALLOT HERE LATEST STATE BASE . CR SPACE HEX DECIMAL WORDS .S DEPTH VER EMIT KEY LED! SW? \\ ( FIND WORD NUMBER INTERPRET QUIT"}</p>
+                                <h3>{"Missing (compared to forth-in-forth)"}</h3>
+                                <p>{"NIP TUCK ROT 2DUP 2DROP 2SWAP 2OVER 1+ 1− NEGATE ABS / MOD 0< ′ (tick) SEE DUMP-ALL PRINT-NAME >NAME SP@ [′] EOL!"}</p>
+                                <p class="about-hint">{"Demos that need these words (e.g. Fibonacci) define them inline."}</p>
+                                <button onclick={close_help.clone()}>{"Close"}</button>
+                            </div>
                         </div>
                     </div>
                 },
                 Some(Tab::ForthInForth) => html! {
                     <div class="about-overlay" onclick={close_help.clone()}>
                         <div class="about-dialog" onclick={stop_click.clone()}>
-                            <h2>{"forth-in-forth"}</h2>
-                            <p>{"Minimal asm kernel (~2200 lines) with the rest of Forth written in Forth and loaded at boot from core/minimal.fth + lowlevel.fth + midlevel.fth + highlevel.fth. Self-hosting demonstration. Simple REPL — no debugger."}</p>
-                            <h3>{"Added in Forth (over forth.s)"}</h3>
-                            <p>{"NIP TUCK ROT −ROT 2DUP 2DROP 2SWAP 2OVER 1+ 1− NEGATE ABS / MOD 0< ′ SEE DUMP-ALL PRINT-NAME >NAME. Plus three new asm primitives [′] EOL! SP@ needed to bootstrap the above."}</p>
-                            <h3>{"Moved asm → Forth"}</h3>
-                            <p>{"IF THEN ELSE BEGIN UNTIL \\ ( = 0= CR SPACE HEX DECIMAL . DEPTH .S WORDS VER. Try SEE IF to see the Forth definition."}</p>
-                            <h3>{"Performance"}</h3>
-                            <p>{"FIND uses a 2-round 24-bit XMX hash with a 1-entry lookaside cache (kernel) plus an adaptive-sub-batch UART pump loop (web). Boot is near-instant on typical hardware."}</p>
-                            <h3>{"Further work"}</h3>
-                            <p>{"The "}<strong>{"forth-on-forthish"}</strong>
-                                {" tab is the next step in this direction — pushing even more of the kernel down into Forth (:, ;, WORD, FIND, NUMBER, INTERPRET, QUIT). See its tab help for details."}</p>
-                            <button onclick={close_help.clone()}>{"Close"}</button>
+                            <button class="about-close" aria-label="Close"
+                                    onclick={close_help.clone()}>{"\u{00d7}"}</button>
+                            <div class="about-content">
+                                <h2>{"forth-in-forth"}</h2>
+                                <p>{"Minimal asm kernel (~2200 lines) with the rest of Forth written in Forth and loaded at boot from core/minimal.fth + lowlevel.fth + midlevel.fth + highlevel.fth. Self-hosting demonstration. Simple REPL — no debugger."}</p>
+                                <h3>{"Added in Forth (over forth.s)"}</h3>
+                                <p>{"NIP TUCK ROT −ROT 2DUP 2DROP 2SWAP 2OVER 1+ 1− NEGATE ABS / MOD 0< ′ SEE DUMP-ALL PRINT-NAME >NAME. Plus three new asm primitives [′] EOL! SP@ needed to bootstrap the above."}</p>
+                                <h3>{"Moved asm → Forth"}</h3>
+                                <p>{"IF THEN ELSE BEGIN UNTIL \\ ( = 0= CR SPACE HEX DECIMAL . DEPTH .S WORDS VER. Try SEE IF to see the Forth definition."}</p>
+                                <h3>{"Performance"}</h3>
+                                <p>{"FIND uses a 2-round 24-bit XMX hash with a 1-entry lookaside cache (kernel) plus an adaptive-sub-batch UART pump loop (web). Boot is near-instant on typical hardware."}</p>
+                                <h3>{"Further work"}</h3>
+                                <p>{"The "}<strong>{"forth-on-forthish"}</strong>
+                                    {" tab is the next step in this direction — pushing even more of the kernel down into Forth (:, ;, WORD, FIND, NUMBER, INTERPRET, QUIT). See its tab help for details."}</p>
+                                <button onclick={close_help.clone()}>{"Close"}</button>
+                            </div>
                         </div>
                     </div>
                 },
                 Some(Tab::ForthOnForthish) => html! {
                     <div class="about-overlay" onclick={close_help.clone()}>
                         <div class="about-dialog" onclick={stop_click.clone()}>
-                            <h2>{"forth-on-forthish"}</h2>
-                            <p>{"Phase 3 of the self-hosting journey. Pushes the asm kernel down to the irreducible minimum — roughly 22 primitives — and moves everything else (including : ; WORD FIND NUMBER INTERPRET QUIT * /MOD AND OR XOR and the stack ops) into Forth. The result is a kernel so reduced that the Forth code runs on something that's already Forth-ish in shape, rather than in an asm-flavored host like forth-in-forth."}</p>
-                            <h3>{"Status"}</h3>
-                            <p>{"Subset 12 — scaffold only. The kernel is currently a byte-for-byte copy of forth-in-forth's, so behavior is identical. Subsets 13–21 land incrementally: ,DOCOL + : ; to Forth, SP@/SP!/RP@/RP! for stack ops, NAND → AND/OR/XOR, * and /MOD as loops, WORD/FIND/NUMBER/INTERPRET/QUIT to Forth."}</p>
-                            <h3>{"New asm primitives being added"}</h3>
-                            <p>{",DOCOL  SP!  RP@  RP!  NAND  WORD-BUFFER  (…)"}</p>
-                            <h3>{"Target"}</h3>
-                            <p>{"≤ 22 asm primitives, ≤ 800 lines of asm (from ~2200 in forth-in-forth); ~70 Forth colon defs. Same example set still runs. Paves the way for phase 4 (forth-from-forth) — a cross-compiler that emits exactly this primitive set."}</p>
-                            <h3>{"Source"}</h3>
-                            <p><a href="https://github.com/sw-embed/sw-cor24-forth/tree/main/forth-on-forthish" target="_blank">{"sw-cor24-forth/forth-on-forthish"}</a></p>
-                            <button onclick={close_help.clone()}>{"Close"}</button>
+                            <button class="about-close" aria-label="Close"
+                                    onclick={close_help.clone()}>{"\u{00d7}"}</button>
+                            <div class="about-content">
+                                <h2>{"forth-on-forthish"}</h2>
+                                <p>{"Phase 3 of the self-hosting journey. Pushes the asm kernel down toward the irreducible minimum — roughly 22 primitives — and moves everything else (including : ; WORD FIND NUMBER INTERPRET QUIT * /MOD AND OR XOR and the stack ops) into Forth. The result is a kernel so reduced that the Forth code runs on something that's already Forth-ish in shape, rather than in an asm-flavored host like forth-in-forth."}</p>
+                                <h3>{"Status"}</h3>
+                                <p>{"Subsets 13–19 done: : ; DUP DROP OVER SWAP R@ INVERT AND OR XOR NEGATE − * /MOD WORD FIND NUMBER and helpers (PICK, DIGIT-VALUE, STR=) all live in Forth now. New asm primitives: ,DOCOL SP@ SP! RP@ NAND WORD-BUFFER EOL-FLAG. Kernel down from 2758 → 2630 lines (−128); Forth tiers up from 229 → 403. Subsets 20–21 remaining: INTERPRET / QUIT to Forth — unblocks deleting the do_word / do_find / do_number bodies (~580 asm lines) still kept for address-refs, plus the monolithic interpret/quit (~280 more)."}</p>
+                                <h3>{"Core tiers (load order)"}</h3>
+                                <p>{"runtime → minimal → lowlevel → midlevel → highlevel. The new runtime tier loads first and supplies the Forth-level stack ops + : ; that later tiers compile against."}</p>
+                                <h3>{"Target"}</h3>
+                                <p>{"≤ 22 asm primitives, ≤ 800 lines of asm (from ~2200 in forth-in-forth); ~70 Forth colon defs. Same example set still runs. Paves the way for phase 4 (forth-from-forth) — a cross-compiler that emits exactly this primitive set."}</p>
+                                <h3>{"Source"}</h3>
+                                <p><a href="https://github.com/sw-embed/sw-cor24-forth/tree/main/forth-on-forthish" target="_blank">{"sw-cor24-forth/forth-on-forthish"}</a></p>
+                                <p class="about-hint">{"Note: this tab tracks work-in-progress upstream; builds can be briefly broken during subset transitions."}</p>
+                                <button onclick={close_help.clone()}>{"Close"}</button>
+                            </div>
                         </div>
                     </div>
                 },

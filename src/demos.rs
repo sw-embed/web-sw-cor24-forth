@@ -37,7 +37,15 @@ pub const FIF_CORE_FILES: &[(&str, &str)] = &[
 
 pub const FOF_KERNEL_SRC: &str = include_str!("../../sw-cor24-forth/forth-on-forthish/kernel.s");
 
+// forth-on-forthish boots an extra `runtime` tier first — that's where the
+// Forth definitions of `:` / `;` / `DUP` / `DROP` / `OVER` / `SWAP` / `R@` /
+// `INVERT` / `AND` / `OR` / `XOR` live (defined via `,DOCOL` + `SP@` / `SP!` /
+// `RP@` / `NAND` primitives that only this kernel has). Must load first.
 pub const FOF_CORE_FILES: &[(&str, &str)] = &[
+    (
+        "runtime",
+        include_str!("../../sw-cor24-forth/forth-on-forthish/core/runtime.fth"),
+    ),
     (
         "minimal",
         include_str!("../../sw-cor24-forth/forth-on-forthish/core/minimal.fth"),
