@@ -2,7 +2,8 @@
 
 use crate::config::{ForthTier, StackSize};
 use crate::demos::FORTH_S_DEMOS as DEMOS;
-use cor24_emulator::{AssembledLine, Assembler, EmulatorCore};
+use cor24_assembler::{AssembledLine, Assembler};
+use cor24_emulator::EmulatorCore;
 use gloo::file::File;
 use gloo::file::callbacks::FileReader;
 use gloo::timers::callback::Timeout;
