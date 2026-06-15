@@ -1,4 +1,5 @@
-use cor24_emulator::{Assembler, EmulatorCore, StopReason};
+use cor24_assembler::Assembler;
+use cor24_emulator::{EmulatorCore, StopReason};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;

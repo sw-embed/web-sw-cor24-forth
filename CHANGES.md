@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-06-15 — Migrate off `cor24_emulator::Assembler` → `cor24_assembler`
+
+The COR24 assembler was split out of `sw-cor24-emulator` into its own
+crate, `sw-cor24-x-assembler` (package `cor24-assembler`). The emulator
+crate no longer re-exports `Assembler` / `AssembledLine`, so this repo
+moved its assembler imports to the new crate.
+
+Changes:
+- `Cargo.toml` — added `cor24-assembler = { path =
+  "../sw-cor24-x-assembler", default-features = false }` to both
+  `[dependencies]` and `[build-dependencies]`.
+- Split the import in three files — `Assembler` / `AssembledLine` now
+  come from `cor24_assembler`; `EmulatorCore` / `StopReason` stay on
+  `cor24_emulator`:
+  - `build.rs`
+  - `src/repl.rs`
+  - `src/debugger.rs`
+
+No call-site logic changed — the `Assembler` / `AssembledLine` API is
+identical, only the crate path moved. Verified with `cargo check`,
+`cargo clippy --all-targets --all-features -- -D warnings`, `cargo
+build --target wasm32-unknown-unknown`, and `./scripts/build-pages.sh`.
+
 ## 2026-04-22 — Refresh README Screenshot
 
 Replaced `images/screenshot.png` with a fresh capture of the current

@@ -10,7 +10,8 @@
 use crate::config::StackSize;
 use crate::demos::Demo;
 use crate::snapshot;
-use cor24_emulator::{Assembler, EmulatorCore};
+use cor24_assembler::Assembler;
+use cor24_emulator::EmulatorCore;
 use gloo::file::File;
 use gloo::file::callbacks::FileReader;
 use gloo::timers::callback::Timeout;
