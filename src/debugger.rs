@@ -2,7 +2,7 @@
 
 use crate::config::{ForthTier, StackSize};
 use crate::demos::FORTH_S_DEMOS as DEMOS;
-use crate::pump::{BATCH_SIZE, Pump};
+use crate::pump::Pump;
 use cor24_assembler::{AssembledLine, Assembler};
 use cor24_emulator::EmulatorCore;
 use gloo::file::File;
@@ -503,10 +503,11 @@ impl Component for Debugger {
                 self.prev_regs = self.snapshot_regs();
                 self.prev_pc = self.emulator.snapshot().pc;
 
-                // One byte per tick, then a flat batch; the pump also
-                // detects "idle in a UART poll loop" (waiting for input).
+                // Adaptive pump: feeds queued bytes while the kernel polls,
+                // runs real work in bigger chunks, and detects "idle in a
+                // UART poll loop" (waiting for input).
                 let was_waiting = self.pump.waiting_for_input;
-                let outcome = self.pump.tick_flat(&mut self.emulator, BATCH_SIZE);
+                let outcome = self.pump.tick_adaptive(&mut self.emulator);
                 let had_output = self.collect_uart_output();
 
                 // Clear boot output on first transition to ready.

@@ -26,7 +26,7 @@ use web_sw_cor24_forth::demos::{
     Demo, FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC, FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC,
     FORTH_S_DEMOS,
 };
-use web_sw_cor24_forth::pump::{BATCH_SIZE, Pump};
+use web_sw_cor24_forth::pump::Pump;
 
 /// Cell size in bytes (24-bit words).
 const CELL: u32 = 3;
@@ -38,15 +38,11 @@ const MAX_STACK_DIP_CELLS: u32 = 8;
 /// After S2 changes, the LED must follow within this many ticks. One tick
 /// is BATCH_SIZE instructions; the MIRROR loop body is a few thousand.
 const LED_FOLLOW_TICKS: usize = 10;
-
-/// Which tab's driving loop to replay.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Loop {
-    /// Tab 1 (`src/debugger.rs`): one byte per tick, flat batch.
-    Flat,
-    /// Tabs 2 & 3 (`src/repl.rs`): adaptive pump.
-    Adaptive,
-}
+/// A demo must be fully typed in and running within this many ticks of
+/// being loaded (25 ms each in the browser, so 5 s). Tab 1 used to need
+/// 511 ticks for this demo — one byte per tick — which read as "the
+/// switch does nothing" because nobody waits 13 s before clicking.
+const MAX_START_TICKS: usize = 200;
 
 /// A booted kernel: emulator + pump, ready for interactive input.
 #[derive(Clone)]
@@ -60,7 +56,6 @@ struct Kernel {
     kernel_src: &'static str,
     core_files: &'static [(&'static str, &'static str)],
     demos: &'static [Demo],
-    driver: Loop,
     cell: OnceLock<Booted>,
 }
 
@@ -69,7 +64,6 @@ static FORTH_S: Kernel = Kernel {
     kernel_src: ForthTier::Interpreter.assembly(),
     core_files: &[],
     demos: FORTH_S_DEMOS,
-    driver: Loop::Flat,
     cell: OnceLock::new(),
 };
 static FIF: Kernel = Kernel {
@@ -77,7 +71,6 @@ static FIF: Kernel = Kernel {
     kernel_src: FIF_KERNEL_SRC,
     core_files: FIF_CORE_FILES,
     demos: FIF_DEMOS,
-    driver: Loop::Adaptive,
     cell: OnceLock::new(),
 };
 static FOF: Kernel = Kernel {
@@ -85,7 +78,6 @@ static FOF: Kernel = Kernel {
     kernel_src: FOF_KERNEL_SRC,
     core_files: FOF_CORE_FILES,
     demos: FOF_DEMOS,
-    driver: Loop::Adaptive,
     cell: OnceLock::new(),
 };
 
@@ -119,7 +111,7 @@ fn boot(k: &Kernel) -> Booted {
     emu.resume();
     let mut b = Booted { emu, pump };
     for _ in 0..100_000 {
-        let out = tick(&mut b, k.driver);
+        let out = tick(&mut b);
         assert!(!out.halted, "{}: CPU halted during bootstrap", k.name);
         if b.pump.booted {
             b.emu.clear_uart_output();
@@ -133,11 +125,8 @@ fn booted(k: &Kernel) -> Booted {
     k.cell.get_or_init(|| boot(k)).clone()
 }
 
-fn tick(b: &mut Booted, driver: Loop) -> web_sw_cor24_forth::pump::TickOutcome {
-    match driver {
-        Loop::Flat => b.pump.tick_flat(&mut b.emu, BATCH_SIZE),
-        Loop::Adaptive => b.pump.tick_adaptive(&mut b.emu),
-    }
+fn tick(b: &mut Booted) -> web_sw_cor24_forth::pump::TickOutcome {
+    b.pump.tick_adaptive(&mut b.emu)
 }
 
 /// Mirror of `Msg::RunFile`: trimmed non-empty lines, each newline-terminated.
@@ -176,12 +165,11 @@ fn dsp(b: &Booted) -> u32 {
 /// can say which demo died.
 fn try_run_until(
     b: &mut Booted,
-    driver: Loop,
     max: usize,
     mut pred: impl FnMut(&Booted) -> bool,
 ) -> Result<Option<usize>, String> {
     for i in 0..max {
-        let out = tick(b, driver);
+        let out = tick(b);
         if out.halted {
             return Err(format!("CPU halted at tick {i}: {:?}", out.reason));
         }
@@ -193,14 +181,9 @@ fn try_run_until(
 }
 
 /// Run ticks until `pred` holds or `max` ticks elapse; returns ticks used.
-fn run_until(
-    b: &mut Booted,
-    driver: Loop,
-    max: usize,
-    mut pred: impl FnMut(&Booted) -> bool,
-) -> Option<usize> {
+fn run_until(b: &mut Booted, max: usize, mut pred: impl FnMut(&Booted) -> bool) -> Option<usize> {
     for i in 0..max {
-        let out = tick(b, driver);
+        let out = tick(b);
         assert!(!out.halted, "CPU halted at tick {i}: {:?}", out.reason);
         if pred(b) {
             return Some(i + 1);
@@ -210,8 +193,8 @@ fn run_until(
 }
 
 /// Run ticks until the kernel is idle with the queue drained.
-fn settle(b: &mut Booted, driver: Loop, max: usize) {
-    let done = run_until(b, driver, max, |b| {
+fn settle(b: &mut Booted, max: usize) {
+    let done = run_until(b, max, |b| {
         b.pump.waiting_for_input && b.pump.queue.is_empty()
     });
     assert!(
@@ -239,7 +222,7 @@ fn led_control_demo_drives_the_led() {
     for k in ALL {
         let mut b = booted(k);
         run_file(&mut b, demo(k, "LED Control").source);
-        settle(&mut b, k.driver, 2_000);
+        settle(&mut b, 2_000);
         let out = b.emu.get_uart_output().to_string();
         assert!(
             !has_unknown_word_error(&out),
@@ -248,11 +231,11 @@ fn led_control_demo_drives_the_led() {
         );
         b.pump.queue_line("ON");
         b.pump.waiting_for_input = false;
-        settle(&mut b, k.driver, 2_000);
+        settle(&mut b, 2_000);
         let after_on = b.emu.get_led() & 1;
         b.pump.queue_line("OFF");
         b.pump.waiting_for_input = false;
-        settle(&mut b, k.driver, 2_000);
+        settle(&mut b, 2_000);
         let after_off = b.emu.get_led() & 1;
         assert_ne!(
             after_on, after_off,
@@ -271,13 +254,13 @@ fn switch_to_led_demo_copies_s2_into_d2() {
         let mut b = booted(k);
         b.emu.set_button_pressed(true);
         run_file(&mut b, src);
-        settle(&mut b, k.driver, 2_000);
+        settle(&mut b, 2_000);
         assert!(led_on(&b), "{}: S2 pressed → LED should be on", k.name);
 
         let mut b = booted(k);
         b.emu.set_button_pressed(false);
         run_file(&mut b, src);
-        settle(&mut b, k.driver, 2_000);
+        settle(&mut b, 2_000);
         assert!(!led_on(&b), "{}: S2 released → LED should be off", k.name);
     }
 }
@@ -294,10 +277,16 @@ fn loop_switch_led_demo_tracks_s2_without_leaking() {
 
         // Let the definitions compile and MIRROR start: the queue drains and
         // the CPU leaves the poll loop.
-        let started = run_until(&mut b, k.driver, 2_000, |b| {
+        let started = run_until(&mut b, 2_000, |b| {
             b.pump.queue.is_empty() && !b.pump.waiting_for_input
         });
-        assert!(started.is_some(), "{}: MIRROR never started", k.name);
+        let started = started.unwrap_or_else(|| panic!("{}: MIRROR never started", k.name));
+        assert!(
+            started <= MAX_START_TICKS,
+            "{}: MIRROR took {started} ticks to start (limit {MAX_START_TICKS}) — the pump is \
+             starving the kernel of input",
+            k.name
+        );
         let out = b.emu.get_uart_output().to_string();
         assert!(
             !has_unknown_word_error(&out),
@@ -310,7 +299,7 @@ fn loop_switch_led_demo_tracks_s2_without_leaking() {
 
         // Switch released → LED off.
         b.emu.set_button_pressed(false);
-        let t = run_until(&mut b, k.driver, LED_FOLLOW_TICKS, |b| {
+        let t = run_until(&mut b, LED_FOLLOW_TICKS, |b| {
             check_stack(b);
             !led_on(b)
         });
@@ -322,7 +311,7 @@ fn loop_switch_led_demo_tracks_s2_without_leaking() {
 
         // Press → LED on.
         b.emu.set_button_pressed(true);
-        let t = run_until(&mut b, k.driver, LED_FOLLOW_TICKS, |b| {
+        let t = run_until(&mut b, LED_FOLLOW_TICKS, |b| {
             check_stack(b);
             led_on(b)
         });
@@ -330,12 +319,12 @@ fn loop_switch_led_demo_tracks_s2_without_leaking() {
 
         // Keep it running a while (hundreds of MIRROR iterations) so a
         // per-iteration stack leak shows up, then release → LED off.
-        run_until(&mut b, k.driver, 300, |b| {
+        run_until(&mut b, 300, |b| {
             check_stack(b);
             false
         });
         b.emu.set_button_pressed(false);
-        let t = run_until(&mut b, k.driver, LED_FOLLOW_TICKS, |b| {
+        let t = run_until(&mut b, LED_FOLLOW_TICKS, |b| {
             check_stack(b);
             !led_on(b)
         });
@@ -410,7 +399,7 @@ fn every_shipped_demo_runs_clean() {
             let mut b = booted(k);
             run_file(&mut b, d.source);
             let max = 20_000;
-            let done = try_run_until(&mut b, k.driver, max, |b| {
+            let done = try_run_until(&mut b, max, |b| {
                 b.pump.waiting_for_input && b.pump.queue.is_empty()
             });
             let out = b.emu.get_uart_output().to_string();

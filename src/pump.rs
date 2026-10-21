@@ -2,10 +2,16 @@
 //! CPU in batches sized to what the kernel is doing.
 //!
 //! This is the one piece of emulator-driving logic that both UI components
-//! share — the REPL tabs (`src/repl.rs`) use the adaptive loop, the
-//! debugger tab (`src/debugger.rs`) the flat one — and it is deliberately
-//! free of Yew so the headless tests in `tests/` can drive the exact loop
-//! the browser runs. Keep it that way: no `web_sys`, no timers, no DOM.
+//! share — the REPL tabs (`src/repl.rs`) and the debugger tab
+//! (`src/debugger.rs`) — and it is deliberately free of Yew so the headless
+//! tests in `tests/` can drive the exact loop the browser runs. Keep it
+//! that way: no `web_sys`, no timers, no DOM.
+//!
+//! The debugger used to feed one byte per 25 ms tick and then run a flat
+//! 50k-instruction batch. That meant a 500-byte demo took 13+ s just to be
+//! typed in — and the kernel burned ~50k instructions per byte spinning in
+//! its UART poll loop. The adaptive loop feeds as many bytes per tick as
+//! the kernel will take, so demos start within a few ticks on every tab.
 
 use cor24_emulator::{EmulatorCore, StopReason};
 use std::collections::{HashMap, VecDeque};
@@ -59,6 +65,11 @@ pub const POLL_LABELS: &[&str] = &[
     "create_read_rx2",
     "backslash_rx",
     "paren_rx",
+    // forth.s re-enters its comment-skipping polls at the `la` *before*
+    // the `_rx` label; without these the pump sees "busy" one time in
+    // six and burns a whole tick budget instead of feeding the next byte.
+    "backslash_loop",
+    "paren_loop",
 ];
 
 /// What one tick did.
@@ -153,14 +164,7 @@ impl Pump {
         }
     }
 
-    /// Debugger-style tick: feed at most one byte, then run a flat batch.
-    pub fn tick_flat(&mut self, emu: &mut EmulatorCore, budget: u64) -> TickOutcome {
-        self.feed_uart_byte(emu);
-        let result = emu.run_batch(budget);
-        self.finish_tick(emu, result.instructions_run, result.reason)
-    }
-
-    /// REPL-style adaptive tick. Each iteration:
+    /// One tick of the run loop (all tabs). Each iteration:
     ///   1. Check if the CPU is busy-waiting at a UART poll.
     ///   2. If polling with empty queue → truly done, break.
     ///   3. If polling with bytes to feed → push one byte, run a TINY
@@ -198,14 +202,19 @@ impl Pump {
                 break;
             }
             let result = emu.run_batch(remaining.min(chunk_size));
-            last_reason = result.reason;
             // Safety: if the emulator isn't advancing (paused, halted),
-            // bail out rather than spin.
+            // bail out rather than spin — and keep the reason that stopped
+            // it (e.g. a breakpoint) rather than the follow-up `Paused`.
             if result.instructions_run == 0 {
+                if used == 0 {
+                    last_reason = result.reason;
+                }
                 break;
             }
+            last_reason = result.reason;
             used += result.instructions_run;
-            if matches!(last_reason, StopReason::Halted) {
+            if !matches!(last_reason, StopReason::CycleLimit) {
+                // Halted, breakpoint, stack fault: the caller decides.
                 break;
             }
         }

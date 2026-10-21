@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-21 — Tab 1 (forth.s) demos start in <1 s; pump drives all tabs
+
+After the demo fix shipped, "Loop Switch LED" worked on tabs 2 and 3 but
+still looked dead on tab 1. The debugger fed exactly one UART byte per
+25 ms tick, so the 511-byte demo took 12.8 s just to be typed in — and
+the kernel burned ~50k instructions per byte spinning in its poll loop.
+Nobody waits 13 s before clicking S2, so the LED "did nothing".
+
+- `src/debugger.rs` now uses the same adaptive `Pump::tick_adaptive` as
+  the REPL tabs; `tick_flat` is gone. `tick_adaptive` keeps the reason
+  that stopped a batch (breakpoint, stack fault) instead of the follow-up
+  `Paused`, so the debugger's breakpoint handling is unchanged.
+- `pump::POLL_LABELS` gains `backslash_loop` / `paren_loop`: forth.s
+  re-enters its comment-skipping polls at the `la` 4 bytes *before* the
+  `_rx` label, so one tick in six misread "idle" as "busy" and burned the
+  whole budget. Measured on forth.s: MIRROR starts after 29 ticks
+  (0.7 s), down from 511 (flat loop) / 170 (adaptive without the labels).
+- `tests/led_switch_demo.rs` asserts every kernel starts the demo within
+  200 ticks (`MAX_START_TICKS`), and no longer has a per-tab driver.
+
 ## 2026-10-20 — Fix LED/switch demo regression; headless demo tests
 
 **Symptom.** On every tab, running "Loop Switch LED" and then clicking
