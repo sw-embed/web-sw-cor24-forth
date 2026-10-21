@@ -2,17 +2,15 @@
 
 use crate::config::{ForthTier, StackSize};
 use crate::demos::FORTH_S_DEMOS as DEMOS;
+use crate::pump::{BATCH_SIZE, Pump};
 use cor24_assembler::{AssembledLine, Assembler};
 use cor24_emulator::EmulatorCore;
 use gloo::file::File;
 use gloo::file::callbacks::FileReader;
 use gloo::timers::callback::Timeout;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
-
-/// Execution batch size per tick (instructions).
-const BATCH_SIZE: u64 = 50_000;
 
 /// Tick interval in milliseconds.
 const TICK_MS: u32 = 25;
@@ -109,8 +107,8 @@ pub struct Debugger {
     /// Previous register values for change highlighting.
     prev_regs: [u32; 8],
     prev_pc: u32,
-    /// Pending UART RX bytes to feed one-at-a-time.
-    uart_rx_queue: VecDeque<u8>,
+    /// UART input queue, poll-loop addresses, and waiting state.
+    pump: Pump,
     /// Ref to output div for auto-scroll.
     output_ref: NodeRef,
     /// Assembler labels: label name -> address.
@@ -127,10 +125,6 @@ pub struct Debugger {
     bottom_tab: BottomTab,
     /// Program extent (end of assembled code).
     program_end: u32,
-    /// True when interpreter is spinning in UART RX poll (waiting for input).
-    waiting_for_input: bool,
-    /// Addresses of UART RX busy-wait loops (for idle detection).
-    uart_poll_addrs: Vec<u32>,
     /// Whether the About dialog is visible.
     show_about: bool,
     /// Whether the History dialog is visible.
@@ -194,25 +188,8 @@ impl Debugger {
         self.halted = false;
         self.prev_regs = [0; 8];
         self.prev_pc = 0;
-        self.uart_rx_queue.clear();
+        self.pump.reset(&self.labels);
         self.selected_word = None;
-        self.waiting_for_input = false;
-        self.uart_poll_addrs = [
-            "key_poll",
-            "word_skip_rx",
-            "word_skip_rx2",
-            "word_read_rx",
-            "word_read_rx2",
-            "create_skip_rx",
-            "create_skip_rx2",
-            "create_read_rx",
-            "create_read_rx2",
-            "backslash_rx",
-            "paren_rx",
-        ]
-        .iter()
-        .filter_map(|name| self.labels.get(*name).copied())
-        .collect();
         self.switch_pressed = was_switch_pressed;
         self.selected_demo = None;
 
@@ -308,18 +285,6 @@ impl Debugger {
     }
 
     /// Feed one byte from the UART RX queue if the UART is ready.
-    fn feed_uart_byte(&mut self) {
-        if self.uart_rx_queue.is_empty() {
-            return;
-        }
-        let status = self.emulator.read_byte(0xFF0101);
-        if status & 0x01 == 0
-            && let Some(byte) = self.uart_rx_queue.pop_front()
-        {
-            self.emulator.send_uart_byte(byte);
-        }
-    }
-
     /// Collect UART output and auto-scroll. Returns true if there was new output.
     fn collect_uart_output(&mut self) -> bool {
         let uart = self.emulator.get_uart_output();
@@ -499,7 +464,7 @@ impl Component for Debugger {
             _tick_handle: None,
             prev_regs: [0; 8],
             prev_pc: 0,
-            uart_rx_queue: VecDeque::new(),
+            pump: Pump::new(),
             output_ref: NodeRef::default(),
             labels: HashMap::new(),
             reverse_labels: HashMap::new(),
@@ -508,8 +473,6 @@ impl Component for Debugger {
             selected_word: None,
             bottom_tab: BottomTab::Dictionary,
             program_end: 0,
-            waiting_for_input: false,
-            uart_poll_addrs: Vec::new(),
             show_about: false,
             show_history: false,
             pending_preview: None,
@@ -539,30 +502,22 @@ impl Component for Debugger {
 
                 self.prev_regs = self.snapshot_regs();
                 self.prev_pc = self.emulator.snapshot().pc;
-                self.feed_uart_byte();
 
-                let result = self.emulator.run_batch(BATCH_SIZE);
+                // One byte per tick, then a flat batch; the pump also
+                // detects "idle in a UART poll loop" (waiting for input).
+                let was_waiting = self.pump.waiting_for_input;
+                let outcome = self.pump.tick_flat(&mut self.emulator, BATCH_SIZE);
                 let had_output = self.collect_uart_output();
 
-                // Detect when interpreter is idle in a UART poll loop (waiting for input).
-                let pc = self.emulator.snapshot().pc;
-                let was_waiting = self.waiting_for_input;
-                self.waiting_for_input =
-                    matches!(result.reason, cor24_emulator::StopReason::CycleLimit)
-                        && self
-                            .uart_poll_addrs
-                            .iter()
-                            .any(|&addr| pc >= addr && pc < addr + 16);
-
                 // Clear boot output on first transition to ready.
-                if self.waiting_for_input && !was_waiting && self.uart_rx_queue.is_empty() {
+                if self.pump.waiting_for_input && !was_waiting && self.pump.queue.is_empty() {
                     self.output.clear();
                 }
 
-                if self.emulator.is_halted() {
+                if outcome.halted {
                     self.running = false;
                     self.halted = true;
-                } else if matches!(result.reason, cor24_emulator::StopReason::Breakpoint(_)) {
+                } else if matches!(outcome.reason, cor24_emulator::StopReason::Breakpoint(_)) {
                     self.running = false;
                     self.emulator.pause();
                 } else if self.running {
@@ -570,7 +525,7 @@ impl Component for Debugger {
                 }
 
                 // Skip re-render when idle in KEY with nothing new to show.
-                if self.waiting_for_input && was_waiting && !had_output {
+                if self.pump.waiting_for_input && was_waiting && !had_output {
                     return false;
                 }
 
@@ -587,7 +542,7 @@ impl Component for Debugger {
                     return false;
                 }
                 // If interpreter hasn't reached input loop yet, warn user.
-                if self.running && !self.waiting_for_input {
+                if self.running && !self.pump.waiting_for_input {
                     self.output.push_str("[input queued — interpreter busy]\n");
                 }
                 // Save to history (both input recall and full log).
@@ -596,12 +551,9 @@ impl Component for Debugger {
                 self.history_pos = -1;
                 self.history_saved.clear();
 
-                for b in self.input.bytes() {
-                    self.uart_rx_queue.push_back(b);
-                }
-                self.uart_rx_queue.push_back(b'\n');
+                self.pump.queue_line(&self.input);
                 self.input.clear();
-                self.waiting_for_input = false;
+                self.pump.waiting_for_input = false;
 
                 if !self.running && !self.halted {
                     self.running = true;
@@ -638,7 +590,7 @@ impl Component for Debugger {
                 self.prev_regs = self.snapshot_regs();
                 self.prev_pc = self.emulator.snapshot().pc;
 
-                self.feed_uart_byte();
+                self.pump.feed_uart_byte(&mut self.emulator);
                 let _result = self.emulator.step();
                 self.collect_uart_output();
 
@@ -659,7 +611,7 @@ impl Component for Debugger {
                 self.prev_regs = self.snapshot_regs();
                 self.prev_pc = self.emulator.snapshot().pc;
 
-                self.feed_uart_byte();
+                self.pump.feed_uart_byte(&mut self.emulator);
                 let _result = self.emulator.step_over();
                 self.collect_uart_output();
 
@@ -780,10 +732,7 @@ impl Component for Debugger {
                         }
                         self.full_log.push(trimmed.to_string());
                         self.history.push(trimmed.to_string());
-                        for b in trimmed.bytes() {
-                            self.uart_rx_queue.push_back(b);
-                        }
-                        self.uart_rx_queue.push_back(b'\n');
+                        self.pump.queue_line(trimmed);
                     }
                 }
                 true
@@ -1011,11 +960,11 @@ impl Component for Debugger {
                             </div>
                         </div>
                         <div class="output" ref={self.output_ref.clone()}>{ &self.output }</div>
-                        <div class={if self.waiting_for_input { "input-bar input-ready" }
+                        <div class={if self.pump.waiting_for_input { "input-bar input-ready" }
                                     else if self.running { "input-bar input-busy" }
                                     else { "input-bar" }}>
                             <span class="prompt">
-                                { if self.running && !self.waiting_for_input { "\u{25F3} " } else { "> " } }
+                                { if self.running && !self.pump.waiting_for_input { "\u{25F3} " } else { "> " } }
                             </span>
                             <input
                                 type="text"
@@ -1026,7 +975,7 @@ impl Component for Debugger {
                                     Msg::InputChanged(input.value())
                                 })}
                                 onkeydown={ctx.link().callback(Msg::InputKeyDown)}
-                                placeholder={if self.running && !self.waiting_for_input {
+                                placeholder={if self.running && !self.pump.waiting_for_input {
                                     "Booting..."
                                 } else {
                                     "Type Forth input..."
@@ -1316,7 +1265,7 @@ impl Component for Debugger {
                         <span class="status-label">{"Status:"}</span>
                         <span class="status-value">
                             { if self.halted { "Halted" }
-                              else if self.waiting_for_input { "Ready" }
+                              else if self.pump.waiting_for_input { "Ready" }
                               else if self.running { "Booting..." }
                               else { "Paused" }
                             }

@@ -14,6 +14,7 @@ trunk build                    # Build WASM to dist/
 ./scripts/build-pages.sh       # Release build to pages/ for GitHub Pages
 cargo clippy --all-targets --all-features -- -D warnings  # Lint
 cargo fmt --all                # Format
+cargo test                     # Unit tests + headless kernel/demo tests (tests/led_switch_demo.rs)
 ```
 
 ### Architecture
@@ -31,6 +32,8 @@ cargo fmt --all                # Format
 - `src/repl.rs` -- Shared REPL for tabs 2 and 3. Takes `ReplProps { label, kernel_src, core_files, demos }` so one component serves both tabs. Adaptive UART pump loop; core/*.fth preload at boot.
 - `src/config.rs` -- ForthTier enum (multi-tier assembly) + StackSize
 - `src/demos.rs` -- Per-tab kernel/core source constants (`FIF_*`, `FOF_*`) and demo lists (`FORTH_S_DEMOS` tab 1, `FIF_DEMOS` tab 2, `FOF_DEMOS` tab 3). FOF_DEMOS currently aliases FIF_DEMOS; break the alias if a demo applies to only one tab. Alphabetical order enforced at compile time via `assert_demos_sorted` const fn + per-list unit tests.
+- `src/pump.rs` -- UART pump shared by tabs 1–3: input queue, `POLL_LABELS` (every kernel UART busy-wait label; add new ones here), adaptive REPL tick + flat debugger tick, idle/booted detection. No Yew, so `tests/` drive it headlessly.
+- `tests/led_switch_demo.rs` -- Headless boot of all three kernels through `Pump`, then the shipped hardware demos with S2 toggled mid-run (LED must follow; data stack must not leak). Run with `cargo test`; this is the gate for demo/kernel/pump regressions.
 - `src/snapshot.rs` -- Build-time snapshot capture + restore (localStorage + embedded blob). Gated by `SNAPSHOT_CACHE_ENABLED` in `src/repl.rs`; currently off pending kernel-side precompute work.
 - `asm/forth-bootstrap.s` -- Phase 1 Forth kernel (copied from sw-cor24-forth; used by tab 1's Bootstrap tier)
 - Tab 1 Interpreter tier reads `../sw-cor24-forth/forth.s` at compile time

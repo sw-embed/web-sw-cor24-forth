@@ -29,3 +29,11 @@ pulldown-cmark = { version = "0.11", default-features = false, features = ["html
 [profile.release]
 opt-level = "z"
 lto = true
+
+# The headless demo tests (tests/led_switch_demo.rs) boot every kernel
+# through tens of millions of emulated instructions; keep the emulator
+# optimized even in `cargo test` so the suite stays fast.
+[profile.dev.package.cor24-emulator]
+opt-level = 3
+[profile.test.package.cor24-emulator]
+opt-level = 3

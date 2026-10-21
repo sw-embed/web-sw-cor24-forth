@@ -25,7 +25,7 @@ impl ForthTier {
         }
     }
 
-    pub fn assembly(self) -> &'static str {
+    pub const fn assembly(self) -> &'static str {
         match self {
             Self::Bootstrap => include_str!("../asm/forth-bootstrap.s"),
             Self::Interpreter => include_str!("../../sw-cor24-forth/forth.s"),

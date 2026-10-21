@@ -9,13 +9,13 @@
 
 use crate::config::StackSize;
 use crate::demos::Demo;
+use crate::pump::{Pump, TICK_MS_BOOT, TICK_MS_INTERACTIVE};
 use crate::snapshot;
 use cor24_assembler::Assembler;
 use cor24_emulator::EmulatorCore;
 use gloo::file::File;
 use gloo::file::callbacks::FileReader;
 use gloo::timers::callback::Timeout;
-use std::collections::{HashMap, VecDeque};
 use web_sys::{HtmlElement, HtmlInputElement};
 use yew::prelude::*;
 
@@ -26,27 +26,8 @@ use yew::prelude::*;
 /// we observe is purely the kernel's, not our cache's.
 const SNAPSHOT_CACHE_ENABLED: bool = false;
 
-/// Per-tick instruction budget once the REPL is interactive.
-const BATCH_SIZE: u64 = 50_000;
-/// Per-tick instruction budget while draining the core/*.fth queue. Tuned
-/// so each tick completes in ~100–200 ms of UI-thread time so the page
-/// stays responsive and the status bar keeps updating.
-const BOOTSTRAP_BATCH: u64 = 600_000;
-/// Adaptive pump-loop sub-batch sizes.
-///   `PUMP_TINY` is used when the CPU is spinning in a UART-poll loop with
-///   bytes still waiting in the RX queue — just enough instructions to let
-///   the CPU consume the byte we just fed and either want another or start
-///   real compile work. Anything larger is busy-waiting at ~19k instr/cheap
-///   byte, which is the single biggest source of wasted time during boot.
-///   `PUMP_BIG` is used when the CPU is doing real compile work (not at a
-///   poll address) — let it make meaningful progress between poll checks.
-const PUMP_TINY: u64 = 2_000;
-const PUMP_BIG: u64 = 50_000;
-/// Tick interval. Shorter during boot (less scheduler overhead per tick)
-/// and restored to the interactive value once ready, so steady-state idle
-/// doesn't burn CPU.
-const TICK_MS_BOOT: u32 = 5;
-const TICK_MS_INTERACTIVE: u32 = 25;
+// Batch sizes, tick intervals, and the pump loop itself live in
+// `crate::pump` so the headless tests drive the same code the browser runs.
 
 /// Per-instance configuration. Each tab passes its own kernel source,
 /// tiered core files, curated demo list, and a short label used in the
@@ -87,14 +68,12 @@ pub struct ForthRepl {
     input: String,
     running: bool,
     halted: bool,
-    booted: bool,
+    /// UART input queue, poll-loop addresses, booted / waiting state.
+    pump: Pump,
     _tick_handle: Option<Timeout>,
-    uart_rx_queue: VecDeque<u8>,
     output_ref: NodeRef,
     input_ref: NodeRef,
     file_input_ref: NodeRef,
-    waiting_for_input: bool,
-    uart_poll_addrs: Vec<u32>,
     show_about: bool,
     show_history: bool,
     pending_preview: Option<(String, String)>,
@@ -122,21 +101,7 @@ impl ForthRepl {
             return;
         }
 
-        let labels: HashMap<String, u32> = result.labels.clone();
-        self.uart_poll_addrs = [
-            "key_poll",
-            "word_skip_rx",
-            "word_skip_rx2",
-            "word_read_rx",
-            "word_read_rx2",
-            "create_skip_rx",
-            "create_skip_rx2",
-            "create_read_rx",
-            "create_read_rx2",
-        ]
-        .iter()
-        .filter_map(|name| labels.get(*name).copied())
-        .collect();
+        self.pump.reset(&result.labels);
 
         let was_switch_pressed = self.switch_pressed;
         self.emulator.hard_reset();
@@ -148,9 +113,6 @@ impl ForthRepl {
         self.emulator.set_pc(0);
         self.output.clear();
         self.halted = false;
-        self.booted = false;
-        self.uart_rx_queue.clear();
-        self.waiting_for_input = false;
         self.selected_demo = None;
         self.switch_pressed = was_switch_pressed;
 
@@ -163,8 +125,8 @@ impl ForthRepl {
                 if was_switch_pressed {
                     self.emulator.set_button_pressed(true);
                 }
-                self.booted = true;
-                self.waiting_for_input = true;
+                self.pump.booted = true;
+                self.pump.waiting_for_input = true;
                 self.running = true;
                 self.schedule_tick(ctx);
                 return;
@@ -176,32 +138,18 @@ impl ForthRepl {
                 if was_switch_pressed {
                     self.emulator.set_button_pressed(true);
                 }
-                self.booted = true;
-                self.waiting_for_input = true;
+                self.pump.booted = true;
+                self.pump.waiting_for_input = true;
                 self.running = true;
                 self.schedule_tick(ctx);
                 return;
             }
         }
 
-        // Slow path: preload core/*.fth into the RX queue (raw bytes,
-        // LF-normalized, no trim, one newline between tiers) and let the
+        // Slow path: preload core/*.fth into the RX queue and let the
         // kernel's QUIT loop compile each line. On completion we'll capture
         // a snapshot so the next load takes the fast path above.
-        for (i, (_name, contents)) in props.core_files.iter().enumerate() {
-            if i > 0 && self.uart_rx_queue.back().is_none_or(|&b| b != b'\n') {
-                self.uart_rx_queue.push_back(b'\n');
-            }
-            for b in contents.bytes() {
-                if b == b'\r' {
-                    continue; // strip CR from CRLF
-                }
-                self.uart_rx_queue.push_back(b);
-            }
-            if self.uart_rx_queue.back().is_none_or(|&b| b != b'\n') {
-                self.uart_rx_queue.push_back(b'\n');
-            }
-        }
+        self.pump.queue_core_files(props.core_files);
 
         self.running = true;
         self.emulator.resume();
@@ -210,7 +158,7 @@ impl ForthRepl {
 
     fn schedule_tick(&mut self, ctx: &Context<Self>) {
         let link = ctx.link().clone();
-        let ms = if self.booted {
+        let ms = if self.pump.booted {
             TICK_MS_INTERACTIVE
         } else {
             TICK_MS_BOOT
@@ -218,18 +166,6 @@ impl ForthRepl {
         self._tick_handle = Some(Timeout::new(ms, move || {
             link.send_message(Msg::Tick);
         }));
-    }
-
-    fn feed_uart_byte(&mut self) {
-        if self.uart_rx_queue.is_empty() {
-            return;
-        }
-        let status = self.emulator.read_byte(0xFF0101);
-        if status & 0x01 == 0
-            && let Some(byte) = self.uart_rx_queue.pop_front()
-        {
-            self.emulator.send_uart_byte(byte);
-        }
     }
 
     fn collect_uart_output(&mut self) -> bool {
@@ -262,14 +198,11 @@ impl Component for ForthRepl {
             input: String::new(),
             running: false,
             halted: false,
-            booted: false,
+            pump: Pump::new(),
             _tick_handle: None,
-            uart_rx_queue: VecDeque::new(),
             output_ref: NodeRef::default(),
             input_ref: NodeRef::default(),
             file_input_ref: NodeRef::default(),
-            waiting_for_input: false,
-            uart_poll_addrs: Vec::new(),
             show_about: false,
             show_history: false,
             pending_preview: None,
@@ -295,85 +228,19 @@ impl Component for ForthRepl {
                     return false;
                 }
 
-                // Adaptive pump-loop. Each iteration:
-                //   1. Check if the CPU is busy-waiting at a UART poll.
-                //   2. If polling with empty queue → truly done, break.
-                //   3. If polling with bytes to feed → push one byte, run
-                //      a TINY sub-batch (~2k instr, just enough for the CPU
-                //      to consume the byte and either want another or
-                //      start real compile work). This is the key win —
-                //      previously we ran ~20k between feeds, ~19.5k of
-                //      which the CPU burned spinning in key_poll waiting
-                //      for the next byte.
-                //   4. If not polling → CPU is doing real compile work,
-                //      run a BIG sub-batch to make progress.
-                let budget = if self.booted {
-                    BATCH_SIZE
-                } else {
-                    BOOTSTRAP_BATCH
-                };
-                let mut instructions_used: u64 = 0;
-                let mut last_reason = cor24_emulator::StopReason::CycleLimit;
-                let mut halted = false;
-                loop {
-                    let pc = self.emulator.snapshot().pc;
-                    let idle_polling = self
-                        .uart_poll_addrs
-                        .iter()
-                        .any(|&addr| pc >= addr && pc < addr + 16);
-
-                    if idle_polling && self.uart_rx_queue.is_empty() {
-                        break;
-                    }
-
-                    let chunk_size = if idle_polling {
-                        self.feed_uart_byte();
-                        PUMP_TINY
-                    } else {
-                        PUMP_BIG
-                    };
-
-                    let remaining = budget.saturating_sub(instructions_used);
-                    if remaining == 0 {
-                        break;
-                    }
-                    let chunk = remaining.min(chunk_size);
-                    let result = self.emulator.run_batch(chunk);
-                    last_reason = result.reason.clone();
-                    // Safety: if the emulator isn't advancing (paused,
-                    // halted), bail out rather than spin.
-                    if result.instructions_run == 0 {
-                        if matches!(last_reason, cor24_emulator::StopReason::Halted) {
-                            halted = true;
-                        }
-                        break;
-                    }
-                    instructions_used += result.instructions_run;
-                    if matches!(last_reason, cor24_emulator::StopReason::Halted) {
-                        halted = true;
-                        break;
-                    }
-                }
+                // Adaptive pump-loop; see `Pump::tick_adaptive`.
+                let was_waiting = self.pump.waiting_for_input;
+                let outcome = self.pump.tick_adaptive(&mut self.emulator);
 
                 // Show boot output too — users want to see the "ok" stream as
-                // proof of life. The final `self.output.clear()` below wipes
+                // proof of life. The `self.output.clear()` below wipes
                 // it right before the first interactive prompt.
                 let had_output = self.collect_uart_output();
-
-                let pc = self.emulator.snapshot().pc;
-                let was_waiting = self.waiting_for_input;
-                self.waiting_for_input =
-                    matches!(last_reason, cor24_emulator::StopReason::CycleLimit)
-                        && self
-                            .uart_poll_addrs
-                            .iter()
-                            .any(|&addr| pc >= addr && pc < addr + 16);
 
                 // First idle with empty queue = bootstrap complete. When
                 // the snapshot cache is enabled, also save so subsequent
                 // loads take the fast path.
-                if !self.booted && self.waiting_for_input && self.uart_rx_queue.is_empty() {
-                    self.booted = true;
+                if outcome.just_booted {
                     self.output.clear();
                     if SNAPSHOT_CACHE_ENABLED {
                         let props = ctx.props();
@@ -382,6 +249,7 @@ impl Component for ForthRepl {
                         let _ = snapshot::save(&key, &snap);
                     }
                 }
+                let halted = outcome.halted;
 
                 if halted {
                     self.running = false;
@@ -390,7 +258,7 @@ impl Component for ForthRepl {
                     self.schedule_tick(ctx);
                 }
 
-                if self.waiting_for_input && was_waiting && !had_output {
+                if self.pump.waiting_for_input && was_waiting && !had_output {
                     return false;
                 }
                 true
@@ -405,7 +273,7 @@ impl Component for ForthRepl {
                 if self.input.is_empty() {
                     return false;
                 }
-                if self.running && !self.waiting_for_input {
+                if self.running && !self.pump.waiting_for_input {
                     self.output.push_str("[input queued — interpreter busy]\n");
                 }
                 self.history.push(self.input.clone());
@@ -413,12 +281,9 @@ impl Component for ForthRepl {
                 self.history_pos = -1;
                 self.history_saved.clear();
 
-                for b in self.input.bytes() {
-                    self.uart_rx_queue.push_back(b);
-                }
-                self.uart_rx_queue.push_back(b'\n');
+                self.pump.queue_line(&self.input);
                 self.input.clear();
-                self.waiting_for_input = false;
+                self.pump.waiting_for_input = false;
 
                 if !self.running && !self.halted {
                     self.running = true;
@@ -538,12 +403,9 @@ impl Component for ForthRepl {
                         }
                         self.full_log.push(trimmed.to_string());
                         self.history.push(trimmed.to_string());
-                        for b in trimmed.bytes() {
-                            self.uart_rx_queue.push_back(b);
-                        }
-                        self.uart_rx_queue.push_back(b'\n');
+                        self.pump.queue_line(trimmed);
                     }
-                    self.waiting_for_input = false;
+                    self.pump.waiting_for_input = false;
                     if !self.running && !self.halted {
                         self.running = true;
                         self.emulator.resume();
@@ -588,14 +450,14 @@ impl Component for ForthRepl {
         let status_text;
         let status_label: &str = if self.halted {
             "Halted"
-        } else if !self.booted {
+        } else if !self.pump.booted {
             status_text = format!(
                 "Booting core/*.fth — {} bytes left, {} cycles",
-                self.uart_rx_queue.len(),
+                self.pump.queue.len(),
                 snap.cycles,
             );
             &status_text
-        } else if self.waiting_for_input {
+        } else if self.pump.waiting_for_input {
             "Ready"
         } else if self.running {
             "Running"
@@ -606,7 +468,7 @@ impl Component for ForthRepl {
         // Lock out UI during bootstrap — the dropdown would close on every
         // re-render, buttons would fight the pump loop, and a user typing
         // would land bytes ahead of the core/*.fth stream.
-        let ui_locked = !self.booted;
+        let ui_locked = !self.pump.booted;
 
         html! {
             <div class="debugger repl-simple">
@@ -706,11 +568,11 @@ impl Component for ForthRepl {
                             </div>
                         </div>
                         <div class="output" ref={self.output_ref.clone()}>{ &self.output }</div>
-                        <div class={if self.waiting_for_input { "input-bar input-ready" }
+                        <div class={if self.pump.waiting_for_input { "input-bar input-ready" }
                                     else if self.running { "input-bar input-busy" }
                                     else { "input-bar" }}>
                             <span class="prompt">
-                                { if self.running && !self.waiting_for_input { "\u{25F3} " } else { "> " } }
+                                { if self.running && !self.pump.waiting_for_input { "\u{25F3} " } else { "> " } }
                             </span>
                             <input
                                 type="text"
@@ -722,9 +584,9 @@ impl Component for ForthRepl {
                                     Msg::InputChanged(input.value())
                                 })}
                                 onkeydown={ctx.link().callback(Msg::InputKeyDown)}
-                                placeholder={if !self.booted {
+                                placeholder={if !self.pump.booted {
                                     "Booting core/*.fth — UI locked until ready..."
-                                } else if self.running && !self.waiting_for_input {
+                                } else if self.running && !self.pump.waiting_for_input {
                                     "Running..."
                                 } else {
                                     "Try: WORDS  or  : SQUARE DUP * ;  5 SQUARE ."

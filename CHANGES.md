@@ -1,5 +1,82 @@
 # Changelog
 
+## 2026-10-20 — Fix LED/switch demo regression; headless demo tests
+
+**Symptom.** On every tab, running "Loop Switch LED" and then clicking
+S2 did nothing to D2. Reproduced on the deployed `pages/` build and in a
+headless replay of the UI's pump loop.
+
+**Root cause (upstream, sw-cor24-forth 53ca54c, 2026-04-10).** The
+rewrite of `examples/13-loop-switch-led.fth` introduced `DELAY`, `PAUSE`
+and `MIRROR` as `100 0 BEGIN 1 + DUP 100 = UNTIL DROP` — each call
+leaves its limit literal on the data stack. MIRROR therefore leaks two
+cells per iteration; with the 3 KB data stack that is ~500 iterations
+(10–20 M instructions, a few seconds in the browser) before the SP
+crosses below the EBR stack base, the emulator's bounds check halts the
+CPU, and the LED freezes at whatever it last showed. `SW?`, `LED!`, the
+emulator's I/O registers and the UI's switch/LED rendering were all
+fine — the one-shot "Switch → LED" demo kept working, which is why this
+looked like a UI bug. Fixed upstream by counting from 0 with only the
+counter on the stack (sw-cor24-forth branch
+`fix/loop-switch-led-stack-leak`). Nothing in this repo caused it; the
+demo is `include_str!`'d from the peer repo, so a demo edit there ships
+here on the next build with no test in either repo exercising it.
+
+**Detection.** The emulator-driving loop was the only logic with no
+headless test, and the demos were only ever run by hand in a browser.
+- `src/pump.rs` — new. The UART pump (input queue, poll-label list,
+  adaptive REPL tick, flat debugger tick, idle/booted detection) extracted
+  from `src/repl.rs` and `src/debugger.rs` so both tabs and the tests run
+  the same code. `POLL_LABELS` is now one list (the REPL's copy lacked
+  `backslash_rx` / `paren_rx`; harmless for tabs 2/3 whose `\` is
+  Forth-defined over `KEY`, but it was drift).
+- `tests/led_switch_demo.rs` — new. Boots forth.s, forth-in-forth and
+  forth-on-forthish exactly as the browser does (same assembler, same
+  core/*.fth queue, same `Pump`), then: runs "LED Control" and checks the
+  register toggles; runs "Switch → LED" with S2 pressed and released;
+  runs "Loop Switch LED", flips S2 mid-run and requires D2 to follow
+  within 10 ticks, and requires the data stack never to dip more than 8
+  cells below idle (the leak fails this at tick ~90 with
+  `StackOverflow`); and runs every other shipped demo to the prompt
+  without an unknown-word `?` (Self Test excepted: its error-handling
+  section feeds `FOO BAR` on purpose). Each kernel boots once per test binary
+  (`OnceLock`); the whole file runs in ~3 s.
+- `Cargo.toml` — `cor24-emulator` is built at `opt-level = 3` in the
+  dev/test profiles so the boots stay fast under plain `cargo test`.
+- `src/config.rs` — `ForthTier::assembly` is `const fn` so the test can
+  name the forth.s source in a `static`.
+
+**CLI side (same bug class, other repos).** The reg-rs suite in
+sw-cor24-forth could only set S2 once at start-up (`--switch on`), so a
+loop that dies mid-run with the LED already "right" passes. Added to
+sw-cor24-emulator (branch `feat/switch-at-led-log`): `cor24-emu
+--switch-at <N>:<on|off>[,...]` schedules S2 changes at exact instruction
+counts (the batch is split at each event) and, at `--speed 0`, logs every
+LED change as `[LED @ N] 0x.. (D2 on|off)` next to the `[S2 @ N]` lines;
+four process tests in `cli/tests/switch_at.rs`. Added to sw-cor24-forth
+(same branch as the demo fix): `reg-rs/tf24a_loop_switch_led_follow` (D2
+follows three S2 toggles while MIRROR runs, 1 s) and
+`reg-rs/tf24a_loop_switch_led_no_leak` (MIRROR to completion then
+`DEPTH .` → 0, 8 s). Both use `cor24-asm` + `cor24-emu --lgo`; the rest
+of that suite still invokes `cor24-run --run`, a binary the emulator no
+longer builds, so it cannot run against current tooling.
+
+**Also noticed, not fixed here.**
+- forth-on-forthish's Forth-level `NUMBER` rejects negative literals
+  (`-1 .` prints `?`), which breaks four shipped tab 3 demos: CONSTANT
+  (halts the CPU), DO LOOP, IF ELSE, IF THEN. forth.s and forth-in-forth
+  run all of them clean. Recorded in `KNOWN_BROKEN` in the test, which
+  insists they *keep* failing so the list cannot go stale.
+- `docs/user-guide.md` / `docs/reference.md` say `LED!` is "non-zero
+  on", but the emulator register is active-low (0 = on) and the UI
+  lights D2 on bit 0 == 0 — so `02-led.fth`'s `ON` (`1 LED!`) turns the
+  dot *off*. The docs, the demo, or the UI polarity need to agree.
+- `help::tests::every_kernel_word_is_documented` already failed on
+  `dev` (12 newer kernel words missing from `docs/reference.md`).
+- Browser timing numbers are unreliable from a background tab: Chrome
+  throttles the tick timer to ~1/s, which makes boot and feeding look
+  10–50× slower than they are.
+
 ## 2026-06-15 — Migrate off `cor24_emulator::Assembler` → `cor24_assembler`
 
 The COR24 assembler was split out of `sw-cor24-emulator` into its own

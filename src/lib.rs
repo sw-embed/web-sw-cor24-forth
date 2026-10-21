@@ -2,6 +2,7 @@ pub mod config;
 pub mod debugger;
 pub mod demos;
 pub mod help;
+pub mod pump;
 pub mod repl;
 pub mod snapshot;
 
