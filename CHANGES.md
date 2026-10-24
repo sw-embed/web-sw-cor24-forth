@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-24 — Pages build in 10 s (was 2 min)
+
+- build.rs replayed the forth-in-forth boot for the snapshot blob feeding
+  one byte per 200k-instruction batch: ~1.75 G instructions, nearly all of
+  them the kernel spinning in its UART poll loop. It now feeds like
+  src/pump.rs (2k-instruction batches while parked in a poll loop): 46 M
+  instructions, same verified 65,605-byte blob. scripts/build-pages.sh:
+  2:07 -> 0:10.
+
 ## 2026-10-23 — Tab 4: forth-from-forth
 
 - New default tab **forth-from-forth**: sw-cor24-forth's phase-4 kernel. A

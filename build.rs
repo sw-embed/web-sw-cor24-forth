@@ -169,6 +169,7 @@ fn try_build_snapshot() -> Result<(Vec<u8>, u64), String> {
     emu.resume();
 
     const SUB_BATCH: u64 = 200_000;
+    const PUMP_TINY: u64 = 2_000;
     const MAX_INSTRUCTIONS: u64 = 2_000_000_000;
     let mut total_instructions: u64 = 0;
 
@@ -178,9 +179,10 @@ fn try_build_snapshot() -> Result<(Vec<u8>, u64), String> {
     // phase turns it off so we can actually see what the kernel produced.
     let run_one = |emu: &mut EmulatorCore,
                    total: &mut u64,
-                   clear_output: bool|
+                   clear_output: bool,
+                   batch: u64|
      -> Result<(), String> {
-        let r = emu.run_batch(SUB_BATCH);
+        let r = emu.run_batch(batch);
         *total += r.instructions_run;
         if *total > MAX_INSTRUCTIONS {
             return Err(format!(
@@ -212,7 +214,16 @@ fn try_build_snapshot() -> Result<(Vec<u8>, u64), String> {
         {
             emu.send_uart_byte(b);
         }
-        run_one(&mut emu, &mut total_instructions, true)?;
+        // Adaptive, like src/pump.rs: parked in a UART poll loop, the kernel
+        // needs only a few instructions to take the byte just fed; a full
+        // SUB_BATCH there is spent spinning. One byte per 200k-instruction
+        // batch made this replay ~1.75 G instructions.
+        let batch = if is_idle(emu.snapshot().pc) {
+            PUMP_TINY
+        } else {
+            SUB_BATCH
+        };
+        run_one(&mut emu, &mut total_instructions, true, batch)?;
     }
 
     // Phase 2: settle. Keep running until the kernel has digested the last
@@ -225,7 +236,7 @@ fn try_build_snapshot() -> Result<(Vec<u8>, u64), String> {
     let mut stable_hits: u32 = 0;
     let settle_start = total_instructions;
     loop {
-        run_one(&mut emu, &mut total_instructions, true)?;
+        run_one(&mut emu, &mut total_instructions, true, SUB_BATCH)?;
         let pc = emu.snapshot().pc;
         if is_idle(pc) {
             stable_hits += 1;
@@ -255,16 +266,16 @@ fn try_build_snapshot() -> Result<(Vec<u8>, u64), String> {
                 emu.send_uart_byte(*b);
                 break;
             }
-            run_one(&mut emu, &mut total_instructions, false)?;
+            run_one(&mut emu, &mut total_instructions, false, SUB_BATCH)?;
         }
-        run_one(&mut emu, &mut total_instructions, false)?;
+        run_one(&mut emu, &mut total_instructions, false, SUB_BATCH)?;
     }
     // Let the kernel process and emit. Give it enough budget for a full
     // line parse + execute + "ok" echo cycle.
     let mut verify_budget: u64 = 10_000_000;
     while verify_budget > 0 {
         let before = total_instructions;
-        run_one(&mut emu, &mut total_instructions, false)?;
+        run_one(&mut emu, &mut total_instructions, false, SUB_BATCH)?;
         verify_budget = verify_budget.saturating_sub(total_instructions - before);
         if emu.get_uart_output().contains('3') && is_idle(emu.snapshot().pc) {
             break;
@@ -284,7 +295,7 @@ fn try_build_snapshot() -> Result<(Vec<u8>, u64), String> {
     let mut stable_hits: u32 = 0;
     let resettle_start = total_instructions;
     loop {
-        run_one(&mut emu, &mut total_instructions, true)?;
+        run_one(&mut emu, &mut total_instructions, true, SUB_BATCH)?;
         let pc = emu.snapshot().pc;
         if is_idle(pc) {
             stable_hits += 1;
