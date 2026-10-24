@@ -103,6 +103,9 @@ pub struct Pump {
     /// Last tick ended with the CPU parked in a poll loop (interactive
     /// "Ready" state).
     pub waiting_for_input: bool,
+    /// Use the bootstrap budget even after boot: set while a large input
+    /// (tab 4's kernel rebuild) is being fed.
+    pub turbo: bool,
 }
 
 impl Pump {
@@ -116,6 +119,7 @@ impl Pump {
         self.queue.clear();
         self.booted = false;
         self.waiting_for_input = false;
+        self.turbo = false;
         self.poll_addrs = POLL_LABELS
             .iter()
             .filter_map(|name| labels.get(*name).copied())
@@ -182,7 +186,7 @@ impl Pump {
     /// The per-tick budget is [`BOOTSTRAP_BATCH`] until booted, then
     /// [`BATCH_SIZE`].
     pub fn tick_adaptive(&mut self, emu: &mut EmulatorCore) -> TickOutcome {
-        let budget = if self.booted {
+        let budget = if self.booted && !self.turbo {
             BATCH_SIZE
         } else {
             BOOTSTRAP_BATCH

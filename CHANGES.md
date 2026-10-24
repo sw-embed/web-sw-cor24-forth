@@ -1,5 +1,18 @@
 # Changelog
 
+
+## 2026-10-24 — Tab 4 rebuilds itself in the browser
+
+- Tab 4 has a **Rebuild kernel** button: the running forth-from-forth
+  kernel is fed its own compiler, primitives and core tiers, prints its
+  kernel.s (captured, not shown), and the tab reports the time, the
+  instruction count and whether the result is identical to the running
+  kernel, text and bytes. Headless test `tab4_rebuilds_its_own_kernel`.
+- The kernel tab 4 runs no longer has the FIND hash table (deleted
+  upstream now that its primitives are Forth): 7,098 bytes, boot to the
+  prompt in about 100 instructions. Help text updated with measured
+  numbers; tests/boot_cost.rs keeps the measurement.
+
 ## 2026-10-24 — Tab 4: primitives in Forth; fixed point
 
 - Tab 4's kernel.s is now generated entirely from Forth: the primitives

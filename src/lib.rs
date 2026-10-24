@@ -3,6 +3,7 @@ pub mod debugger;
 pub mod demos;
 pub mod help;
 pub mod pump;
+pub mod rebuild;
 pub mod repl;
 pub mod snapshot;
 
@@ -192,6 +193,7 @@ pub fn app() -> Html {
                         core_files: FIF_CORE_FILES,
                         demos: FIF_DEMOS,
                         on_open_help: open_global_help.clone(),
+                        rebuild: false,
                     } />
                 },
                 Tab::ForthOnForthish => html! {
@@ -201,6 +203,7 @@ pub fn app() -> Html {
                         core_files: FOF_CORE_FILES,
                         demos: FOF_DEMOS,
                         on_open_help: open_global_help.clone(),
+                        rebuild: false,
                     } />
                 },
                 Tab::ForthFromForth => html! {
@@ -210,6 +213,7 @@ pub fn app() -> Html {
                         core_files: FFF_CORE_FILES,
                         demos: FFF_DEMOS,
                         on_open_help: open_global_help.clone(),
+                        rebuild: true,
                     } />
                 },
             }}
@@ -289,11 +293,11 @@ pub fn app() -> Html {
                                 <h2>{"forth-from-forth"}</h2>
                                 <p>{"Phase 4. The same Forth as forth-on-forthish, but its whole kernel comes from Forth: a cross-compiler written in Forth (compiler/xcomp.fth) reads the five core tiers as source and emits their dictionary as COR24 assembly, and the primitives are written in a small COR24 assembler vocabulary in Forth (core/prims-asm.fth: r0 fp add, r0 0 r2 lw, …). No assembly template is involved."}</p>
                                 <h3>{"What is different"}</h3>
-                                <p>{"Nothing is streamed at boot. Tabs 2 and 3 type their core files into the UART and compile them every time; this kernel starts with all 83 definitions already in its dictionary and goes straight to the Forth QUIT. First output after about 0.7 million instructions, against about 150 million for forth-on-forthish."}</p>
+                                <p>{"Nothing is streamed at boot. Tabs 2 and 3 type their core files into the UART and compile them every time; this kernel starts with all 83 definitions already in its dictionary and goes straight to the Forth QUIT. Boot to the prompt takes about 100 instructions, against about 10 million for forth-on-forthish to compile its core."}</p>
                                 <h3>{"A fixed point"}</h3>
                                 <p>{"Run on this kernel, the cross-compiler reproduces this kernel's own kernel.s exactly, from its Forth sources. The hand-written forth-on-forthish kernel was only needed to start the chain."}</p>
                                 <h3>{"What is gone"}</h3>
-                                <p>{"The assembly bootstrap: INTERPRET, QUIT, NUMBER, WORD, FIND, : ; and ['] in assembly are not in the image (a reachability pass drops every block nothing uses). 8,168 bytes, against 9,450 with the bootstrap still in."}</p>
+                                <p>{"The assembly bootstrap (INTERPRET, QUIT, NUMBER, WORD, FIND, : ; and ['] in assembly) and the hashed FIND table: a reachability pass drops every block nothing uses, and the hash code was deleted from the Forth primitives. 7,098 bytes, against 9,450 with the bootstrap and hash still in."}</p>
                                 <h3>{"Try"}</h3>
                                 <p>{"SEE IF, SEE QUIT, WORDS — every word you see was compiled by the Forth cross-compiler, not by this kernel at boot."}</p>
                                 <h3>{"Not yet"}</h3>

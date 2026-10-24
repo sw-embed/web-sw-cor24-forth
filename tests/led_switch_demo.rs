@@ -118,12 +118,16 @@ struct Watchdog {
 
 impl Watchdog {
     fn new(what: impl Into<String>) -> Self {
+        Self::with_budget(what, loop_budget())
+    }
+
+    fn with_budget(what: impl Into<String>, budget: Duration) -> Self {
         let now = Instant::now();
         Watchdog {
             what: what.into(),
             start: now,
             last: now,
-            budget: loop_budget(),
+            budget,
         }
     }
 
@@ -501,4 +505,46 @@ fn every_shipped_demo_runs_clean() {
             );
         }
     }
+}
+
+/// Tab 4's "Rebuild kernel": the running forth-from-forth kernel compiles
+/// its own kernel.s from its Forth sources through the same pump (in turbo
+/// mode) and the same `rebuild` module the browser uses, and the result
+/// must be the kernel it is running, text and bytes. This is the
+/// self-hosting fixed point, checked in the tab's own code path.
+#[test]
+fn tab4_rebuilds_its_own_kernel() {
+    let mut b = booted(&FFF);
+    let input = web_sw_cor24_forth::rebuild::input();
+    b.pump.queue.extend(input.bytes());
+    b.pump.turbo = true;
+    b.pump.waiting_for_input = false;
+    let mut captured = String::new();
+    let mut dog = Watchdog::with_budget("tab 4 rebuild", loop_budget() * 3);
+    let mut ticks = 0;
+    let text = loop {
+        dog.check(&b, ticks);
+        let out = tick(&mut b);
+        ticks += 1;
+        assert!(
+            !out.halted,
+            "CPU halted during the rebuild: {:?}",
+            out.reason
+        );
+        captured.push_str(b.emu.get_uart_output());
+        b.emu.clear_uart_output();
+        if let Some(t) = web_sw_cor24_forth::rebuild::extract(&captured) {
+            break t;
+        }
+    };
+    let v = web_sw_cor24_forth::rebuild::verdict(&text, FFF_KERNEL_SRC);
+    eprintln!(
+        "tab 4 rebuild: {ticks} ticks, {} lines, {:?} bytes",
+        v.lines, v.bytes
+    );
+    assert!(
+        v.same_text && v.same_bytes,
+        "rebuilt kernel differs from the running one: {:?}",
+        v.first_difference
+    );
 }

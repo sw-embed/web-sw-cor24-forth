@@ -41,6 +41,40 @@ pub struct ReplProps {
     /// Opens the global Help dialog (User Guide / Reference / Tutorial).
     /// Fired by the "Help" button in the REPL toolbar.
     pub on_open_help: Callback<()>,
+    /// Show "Rebuild kernel" (tab 4): the running kernel compiles its own
+    /// kernel.s from its Forth sources; see `crate::rebuild`.
+    #[prop_or(false)]
+    pub rebuild: bool,
+}
+
+/// A kernel rebuild in progress (tab 4).
+struct RebuildRun {
+    /// UART output since the rebuild started (not shown; it is ~4,000
+    /// lines of assembly).
+    captured: String,
+    total_bytes: usize,
+    start_ms: f64,
+    start_instructions: u64,
+}
+
+fn now_ms() -> f64 {
+    web_sys::window()
+        .and_then(|w| w.performance())
+        .map(|p| p.now())
+        .unwrap_or(0.0)
+}
+
+/// 1234567 -> "1,234,567"
+fn grouped(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 pub enum Msg {
@@ -60,6 +94,7 @@ pub enum Msg {
     CancelFile,
     ToggleAbout,
     ToggleHistory,
+    Rebuild,
 }
 
 pub struct ForthRepl {
@@ -84,9 +119,64 @@ pub struct ForthRepl {
     switch_pressed: bool,
     selected_demo: Option<usize>,
     _file_reader: Option<FileReader>,
+    rebuild: Option<RebuildRun>,
 }
 
 impl ForthRepl {
+    /// Finish a rebuild once the end marker has arrived: compare the
+    /// rebuilt kernel.s with the running kernel and print the verdict.
+    fn finish_rebuild(&mut self, kernel_src: &str) {
+        let Some(run) = self.rebuild.as_ref() else {
+            return;
+        };
+        let Some(text) = crate::rebuild::extract(&run.captured) else {
+            return;
+        };
+        let run = self.rebuild.take().unwrap();
+        self.pump.turbo = false;
+        let secs = (now_ms() - run.start_ms) / 1000.0;
+        let instr = self.emulator.instructions_count() - run.start_instructions;
+        let v = crate::rebuild::verdict(&text, kernel_src);
+        self.output.push_str(&format!(
+            "[Rebuild done: {:.1} s, {} instructions]\n",
+            secs,
+            grouped(instr)
+        ));
+        match &v.bytes {
+            Ok(n) => self.output.push_str(&format!(
+                "  kernel.s rebuilt by this kernel: {} lines, assembled to {} bytes\n",
+                grouped(v.lines as u64),
+                grouped(*n as u64)
+            )),
+            Err(e) => self.output.push_str(&format!(
+                "  kernel.s rebuilt: {} lines, but it does not assemble: {e}\n",
+                grouped(v.lines as u64)
+            )),
+        }
+        if v.same_text && v.same_bytes {
+            self.output.push_str(
+                "  identical to the kernel you are running: same text, same bytes. \
+                 A fixed point: this kernel rebuilt itself.\n",
+            );
+        } else {
+            self.output.push_str(&format!(
+                "  differs from the running kernel (text {}, bytes {})\n",
+                if v.same_text { "same" } else { "different" },
+                if v.same_bytes { "same" } else { "different" }
+            ));
+            if let Some((n, got, want)) = &v.first_difference {
+                self.output.push_str(&format!(
+                    "  first difference, line {n}:\n    rebuilt: {got}\n    running: {want}\n"
+                ));
+            }
+        }
+        let leftover = run.captured[run.captured.find("!!END-KERNEL!!").unwrap_or(0)..]
+            .split_once('\n')
+            .map(|(_, rest)| rest.to_string())
+            .unwrap_or_default();
+        self.output.push_str(&leftover);
+    }
+
     fn load_binary(&mut self, ctx: &Context<Self>) {
         let props = ctx.props();
         let mut asm = Assembler::new();
@@ -158,7 +248,7 @@ impl ForthRepl {
 
     fn schedule_tick(&mut self, ctx: &Context<Self>) {
         let link = ctx.link().clone();
-        let ms = if self.pump.booted {
+        let ms = if self.pump.booted && !self.pump.turbo {
             TICK_MS_INTERACTIVE
         } else {
             TICK_MS_BOOT
@@ -170,6 +260,13 @@ impl ForthRepl {
 
     fn collect_uart_output(&mut self) -> bool {
         let uart = self.emulator.get_uart_output();
+        if let Some(run) = self.rebuild.as_mut() {
+            if !uart.is_empty() {
+                run.captured.push_str(uart);
+                self.emulator.clear_uart_output();
+            }
+            return true; // progress in the status line
+        }
         if !uart.is_empty() {
             self.output.push_str(uart);
             self.emulator.clear_uart_output();
@@ -213,6 +310,7 @@ impl Component for ForthRepl {
             switch_pressed: false,
             selected_demo: None,
             _file_reader: None,
+            rebuild: None,
         }
     }
 
@@ -236,6 +334,9 @@ impl Component for ForthRepl {
                 // proof of life. The `self.output.clear()` below wipes
                 // it right before the first interactive prompt.
                 let had_output = self.collect_uart_output();
+                if self.rebuild.is_some() {
+                    self.finish_rebuild(ctx.props().kernel_src);
+                }
 
                 // First idle with empty queue = bootstrap complete. When
                 // the snapshot cache is enabled, also save so subsequent
@@ -272,6 +373,11 @@ impl Component for ForthRepl {
             Msg::SendInput => {
                 if self.input.is_empty() {
                     return false;
+                }
+                if self.rebuild.is_some() {
+                    self.output
+                        .push_str("[a kernel rebuild is running; wait for it to finish]\n");
+                    return true;
                 }
                 if self.running && !self.pump.waiting_for_input {
                     self.output.push_str("[input queued — interpreter busy]\n");
@@ -350,7 +456,39 @@ impl Component for ForthRepl {
             }
 
             Msg::Reset => {
+                self.rebuild = None;
                 self.load_binary(ctx);
+                true
+            }
+
+            Msg::Rebuild => {
+                if !self.pump.booted || self.rebuild.is_some() || self.halted {
+                    return false;
+                }
+                let input = crate::rebuild::input();
+                self.output.push_str(&format!(
+                    "\n[Rebuild: this kernel now compiles its own kernel.s from its Forth \
+                     sources: the cross-compiler (compiler/xcomp.fth), the primitives \
+                     (core/prims-asm.fth) and the five core tiers, {} bytes in all. \
+                     The ~4,000 lines of assembly it prints are captured, not shown; \
+                     the result is compared with the kernel you are running. About a \
+                     billion and a quarter instructions: expect a minute or so.]\n",
+                    grouped(input.len() as u64)
+                ));
+                self.rebuild = Some(RebuildRun {
+                    captured: String::new(),
+                    total_bytes: input.len(),
+                    start_ms: now_ms(),
+                    start_instructions: self.emulator.instructions_count(),
+                });
+                self.pump.queue.extend(input.bytes());
+                self.pump.turbo = true;
+                self.pump.waiting_for_input = false;
+                if !self.running {
+                    self.running = true;
+                    self.emulator.resume();
+                }
+                self.schedule_tick(ctx);
                 true
             }
 
@@ -450,6 +588,15 @@ impl Component for ForthRepl {
         let status_text;
         let status_label: &str = if self.halted {
             "Halted"
+        } else if let Some(run) = &self.rebuild {
+            let fed = run.total_bytes - self.pump.queue.len();
+            status_text = format!(
+                "Rebuilding kernel.s: {}% of the source fed, {} M instructions, {:.0} s",
+                fed * 100 / run.total_bytes.max(1),
+                (self.emulator.instructions_count() - run.start_instructions) / 1_000_000,
+                (now_ms() - run.start_ms) / 1000.0
+            );
+            &status_text
         } else if !self.pump.booted {
             status_text = format!(
                 "Booting core/*.fth — {} bytes left, {} cycles",
@@ -468,7 +615,7 @@ impl Component for ForthRepl {
         // Lock out UI during bootstrap — the dropdown would close on every
         // re-render, buttons would fight the pump loop, and a user typing
         // would land bytes ahead of the core/*.fth stream.
-        let ui_locked = !self.pump.booted;
+        let ui_locked = !self.pump.booted || self.rebuild.is_some();
 
         html! {
             <div class="debugger repl-simple">
@@ -527,6 +674,18 @@ impl Component for ForthRepl {
                         style="display:none"
                         onchange={ctx.link().callback(Msg::FileChanged)}
                     />
+                    { if ctx.props().rebuild {
+                        html! {
+                            <button class="upload-btn"
+                                    title="This kernel compiles its own kernel.s from its Forth sources and compares the result with itself"
+                                    disabled={ui_locked || self.halted}
+                                    onclick={ctx.link().callback(|_| Msg::Rebuild)}>
+                                {"Rebuild kernel"}
+                            </button>
+                        }
+                    } else {
+                        html! {}
+                    }}
                     <button class="about-btn"
                             disabled={ui_locked}
                             onclick={ctx.link().callback(|_| Msg::ToggleHistory)}>
