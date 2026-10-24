@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-24 — Tab 4: primitives in Forth; fixed point
+
+- Tab 4's kernel.s is now generated entirely from Forth: the primitives
+  are written in a COR24 assembler vocabulary (sw-cor24-forth
+  core/prims-asm.fth), and the kernel reproduces itself when its own
+  cross-compiler runs on it. Help text updated; the bytes are unchanged.
+- docs/forth-on-cor24.* updated to match.
+
 ## 2026-10-24 — Pages build in 10 s (was 2 min)
 
 - build.rs replayed the forth-in-forth boot for the snapshot blob feeding

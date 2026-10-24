@@ -287,15 +287,17 @@ pub fn app() -> Html {
                                     onclick={close_help.clone()}>{"\u{00d7}"}</button>
                             <div class="about-content">
                                 <h2>{"forth-from-forth"}</h2>
-                                <p>{"Phase 4. The same Forth as forth-on-forthish, but its kernel comes from Forth: a cross-compiler written in Forth (compiler/xcomp.fth) reads the five core tiers as source and emits their dictionary as COR24 assembly, and scripts/build-image.sh splices it into kernel.s."}</p>
+                                <p>{"Phase 4. The same Forth as forth-on-forthish, but its whole kernel comes from Forth: a cross-compiler written in Forth (compiler/xcomp.fth) reads the five core tiers as source and emits their dictionary as COR24 assembly, and the primitives are written in a small COR24 assembler vocabulary in Forth (core/prims-asm.fth: r0 fp add, r0 0 r2 lw, …). No assembly template is involved."}</p>
                                 <h3>{"What is different"}</h3>
                                 <p>{"Nothing is streamed at boot. Tabs 2 and 3 type their core files into the UART and compile them every time; this kernel starts with all 83 definitions already in its dictionary and goes straight to the Forth QUIT. First output after about 0.7 million instructions, against about 150 million for forth-on-forthish."}</p>
+                                <h3>{"A fixed point"}</h3>
+                                <p>{"Run on this kernel, the cross-compiler reproduces this kernel's own kernel.s exactly, from its Forth sources. The hand-written forth-on-forthish kernel was only needed to start the chain."}</p>
                                 <h3>{"What is gone"}</h3>
                                 <p>{"The assembly bootstrap: INTERPRET, QUIT, NUMBER, WORD, FIND, : ; and ['] in assembly are not in the image (a reachability pass drops every block nothing uses). 8,168 bytes, against 9,450 with the bootstrap still in."}</p>
                                 <h3>{"Try"}</h3>
                                 <p>{"SEE IF, SEE QUIT, WORDS — every word you see was compiled by the Forth cross-compiler, not by this kernel at boot."}</p>
                                 <h3>{"Not yet"}</h3>
-                                <p>{"The primitives still come from a hand-written assembly template; moving them into core/prims.fth (so no assembly is hand-written) is the next step."}</p>
+                                <p>{"The assembler vocabulary prints assembly text, which the cor24-asm assembler (Rust) turns into bytes; there is no instruction encoder in Forth yet. The cross-compiler runs at build time in the emulator, not in this tab."}</p>
                                 <h3>{"Source"}</h3>
                                 <p><a href="https://github.com/sw-embed/sw-cor24-forth/tree/main/forth-from-forth" target="_blank">{"sw-cor24-forth/forth-from-forth"}</a></p>
                                 <button onclick={close_help.clone()}>{"Close"}</button>
