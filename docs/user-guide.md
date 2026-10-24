@@ -10,7 +10,8 @@ and push their results back.
 Forth is interactive: every line you type is either evaluated immediately
 or compiled into a new word definition. The language is tiny, extensible,
 and self-hosting — this UI runs a Forth implementation that is itself
-partially (tabs 2 and 3) or entirely (tab 3) written in Forth.
+partially (tabs 2 and 3) or entirely (tabs 3 and 4) written in Forth;
+in tab 4 even the kernel's dictionary was produced by Forth.
 
 ## What this UI is
 
@@ -24,9 +25,11 @@ code, inspect the VM — all client-side.
 |-----|--------|---------|
 | `forth.s` | full asm (~3000 lines) | **Debugger**. Step/inspect the VM, watch stacks and registers, set breakpoints. Slower because every tick re-renders six panels. |
 | `forth-in-forth` | minimized asm + Forth (~2700 lines asm) | **Self-hosting REPL**. Most of the high-level Forth (IF/THEN, NIP/TUCK, WORDS, SEE, …) is written in Forth in `core/*.fth` and loaded at boot. |
-| `forth-on-forthish` *(default)* | minimal asm + `QUIT-VECTOR` handoff | **Phase-3 REPL**. Adds `: ; WORD FIND NUMBER INTERPRET QUIT` and the stack ops in Forth. Once `highlevel.fth` finishes loading, control transfers via `QUIT-VECTOR` to a Forth-written interpret/quit loop — every prompt line now runs through Forth code, not asm. |
+| `forth-on-forthish` | minimal asm + `QUIT-VECTOR` handoff | **Phase-3 REPL**. Adds `: ; WORD FIND NUMBER INTERPRET QUIT` and the stack ops in Forth. Once `highlevel.fth` finishes loading, control transfers via `QUIT-VECTOR` to a Forth-written interpret/quit loop — every prompt line now runs through Forth code, not asm. |
 
-Tabs 2 and 3 share a REPL component; tab 1 has a richer debugger layout.
+| `forth-from-forth` *(default)* | generated: primitives + cross-compiled core | **Phase-4 REPL**. Same Forth as tab 3, but a cross-compiler written in Forth has already compiled the core into the kernel image, so nothing is streamed at boot and the prompt is ready at once. The assembly bootstrap is gone from the image. |
+
+Tabs 2, 3 and 4 share a REPL component; tab 1 has a richer debugger layout.
 
 ## Using the REPL
 

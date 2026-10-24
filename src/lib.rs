@@ -7,7 +7,10 @@ pub mod repl;
 pub mod snapshot;
 
 use debugger::Debugger;
-use demos::{FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC, FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC};
+use demos::{
+    FFF_CORE_FILES, FFF_DEMOS, FFF_KERNEL_SRC, FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC,
+    FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC,
+};
 use gloo::events::EventListener;
 use help::Help;
 use repl::{ForthRepl, ReplProps};
@@ -20,14 +23,15 @@ enum Tab {
     ForthS,
     ForthInForth,
     ForthOnForthish,
+    ForthFromForth,
 }
 
 #[function_component(App)]
 pub fn app() -> Html {
     // Default to the "best current" tab. Bump forward as later phases
-    // stabilize — today that's forth-on-forthish (phase 3 complete:
-    // INTERPRET/QUIT live in Forth, driven via QUIT-VECTOR handoff).
-    let tab = use_state(|| Tab::ForthOnForthish);
+    // stabilize — today that's forth-from-forth (phase 4: the core is
+    // cross-compiled into the image, so the REPL is ready at once).
+    let tab = use_state(|| Tab::ForthFromForth);
     let help_open = use_state(|| None::<Tab>);
     let global_help_open = use_state(|| false);
 
@@ -42,6 +46,10 @@ pub fn app() -> Html {
     let on_fof = {
         let tab = tab.clone();
         Callback::from(move |_| tab.set(Tab::ForthOnForthish))
+    };
+    let on_fff = {
+        let tab = tab.clone();
+        Callback::from(move |_| tab.set(Tab::ForthFromForth))
     };
     let open_forth_s_help = {
         let help_open = help_open.clone();
@@ -62,6 +70,13 @@ pub fn app() -> Html {
         Callback::from(move |e: MouseEvent| {
             e.stop_propagation();
             help_open.set(Some(Tab::ForthOnForthish));
+        })
+    };
+    let open_fff_help = {
+        let help_open = help_open.clone();
+        Callback::from(move |e: MouseEvent| {
+            e.stop_propagation();
+            help_open.set(Some(Tab::ForthFromForth));
         })
     };
     let close_help = {
@@ -160,6 +175,12 @@ pub fn app() -> Html {
                     <span class="tab-help" title="What's this tab?"
                           onclick={open_fof_help}>{"?"}</span>
                 </button>
+                <button class={classes!("top-tab", (active == Tab::ForthFromForth).then_some("active"))}
+                        onclick={on_fff}>
+                    {"forth-from-forth"}
+                    <span class="tab-help" title="What's this tab?"
+                          onclick={open_fff_help}>{"?"}</span>
+                </button>
             </div>
             // Active tab content
             { match active {
@@ -179,6 +200,15 @@ pub fn app() -> Html {
                         kernel_src: FOF_KERNEL_SRC,
                         core_files: FOF_CORE_FILES,
                         demos: FOF_DEMOS,
+                        on_open_help: open_global_help.clone(),
+                    } />
+                },
+                Tab::ForthFromForth => html! {
+                    <ForthRepl ..ReplProps {
+                        label: "forth-from-forth",
+                        kernel_src: FFF_KERNEL_SRC,
+                        core_files: FFF_CORE_FILES,
+                        demos: FFF_DEMOS,
                         on_open_help: open_global_help.clone(),
                     } />
                 },
@@ -245,6 +275,29 @@ pub fn app() -> Html {
                                 <p>{"The original ≤800 asm-line target isn't realistic here — do_word / do_find / do_number (~580 lines) must stay for bootstrap, and the asm bootstrap still needs STATE/IMMEDIATE/compile-mode to parse runtime.fth. Further shrinkage is deferred to phase 4 (forth-from-forth): a cross-compiled kernel, or a pre-compiled dictionary image that lets the asm bootstrap drop the big helpers."}</p>
                                 <h3>{"Source"}</h3>
                                 <p><a href="https://github.com/sw-embed/sw-cor24-forth/tree/main/forth-on-forthish" target="_blank">{"sw-cor24-forth/forth-on-forthish"}</a></p>
+                                <button onclick={close_help.clone()}>{"Close"}</button>
+                            </div>
+                        </div>
+                    </div>
+                },
+                Some(Tab::ForthFromForth) => html! {
+                    <div class="about-overlay" onclick={close_help.clone()}>
+                        <div class="about-dialog" onclick={stop_click.clone()}>
+                            <button class="about-close" aria-label="Close"
+                                    onclick={close_help.clone()}>{"\u{00d7}"}</button>
+                            <div class="about-content">
+                                <h2>{"forth-from-forth"}</h2>
+                                <p>{"Phase 4. The same Forth as forth-on-forthish, but its kernel comes from Forth: a cross-compiler written in Forth (compiler/xcomp.fth) reads the five core tiers as source and emits their dictionary as COR24 assembly, and scripts/build-image.sh splices it into kernel.s."}</p>
+                                <h3>{"What is different"}</h3>
+                                <p>{"Nothing is streamed at boot. Tabs 2 and 3 type their core files into the UART and compile them every time; this kernel starts with all 83 definitions already in its dictionary and goes straight to the Forth QUIT. First output after about 0.7 million instructions, against about 150 million for forth-on-forthish."}</p>
+                                <h3>{"What is gone"}</h3>
+                                <p>{"The assembly bootstrap: INTERPRET, QUIT, NUMBER, WORD, FIND, : ; and ['] in assembly are not in the image (a reachability pass drops every block nothing uses). 8,168 bytes, against 9,450 with the bootstrap still in."}</p>
+                                <h3>{"Try"}</h3>
+                                <p>{"SEE IF, SEE QUIT, WORDS — every word you see was compiled by the Forth cross-compiler, not by this kernel at boot."}</p>
+                                <h3>{"Not yet"}</h3>
+                                <p>{"The primitives still come from a hand-written assembly template; moving them into core/prims.fth (so no assembly is hand-written) is the next step."}</p>
+                                <h3>{"Source"}</h3>
+                                <p><a href="https://github.com/sw-embed/sw-cor24-forth/tree/main/forth-from-forth" target="_blank">{"sw-cor24-forth/forth-from-forth"}</a></p>
                                 <button onclick={close_help.clone()}>{"Close"}</button>
                             </div>
                         </div>

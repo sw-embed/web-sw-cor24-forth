@@ -27,18 +27,19 @@ cargo test                     # Unit tests + headless kernel/demo tests (tests/
 
 ### Key Files
 
-- `src/lib.rs` -- App entry point with top-level tab switcher (forth.s / forth-in-forth / forth-on-forthish) and per-tab `?` help dialogs. Default tab is forth-on-forthish (phase 3 complete — Forth INTERPRET/QUIT).
+- `src/lib.rs` -- App entry point with top-level tab switcher (forth.s / forth-in-forth / forth-on-forthish / forth-from-forth) and per-tab `?` help dialogs. Default tab is forth-from-forth (phase 4: the core is cross-compiled into the kernel image; nothing streams at boot).
 - `src/debugger.rs` -- Tab 1: full debugger (emulator loop, inspection panels). Uses its own Properties (none).
 - `src/repl.rs` -- Shared REPL for tabs 2 and 3. Takes `ReplProps { label, kernel_src, core_files, demos }` so one component serves both tabs. Adaptive UART pump loop; core/*.fth preload at boot.
 - `src/config.rs` -- ForthTier enum (multi-tier assembly) + StackSize
 - `src/demos.rs` -- Per-tab kernel/core source constants (`FIF_*`, `FOF_*`) and demo lists (`FORTH_S_DEMOS` tab 1, `FIF_DEMOS` tab 2, `FOF_DEMOS` tab 3). FOF_DEMOS currently aliases FIF_DEMOS; break the alias if a demo applies to only one tab. Alphabetical order enforced at compile time via `assert_demos_sorted` const fn + per-list unit tests.
 - `src/pump.rs` -- UART pump shared by tabs 1–3: input queue, `POLL_LABELS` (every kernel UART busy-wait label; add new ones here), adaptive REPL tick + flat debugger tick, idle/booted detection. No Yew, so `tests/` drive it headlessly.
-- `tests/led_switch_demo.rs` -- Headless boot of all three kernels through `Pump`, then the shipped hardware demos with S2 toggled mid-run (LED must follow; data stack must not leak). Run with `cargo test`; this is the gate for demo/kernel/pump regressions.
+- `tests/led_switch_demo.rs` -- Headless boot of all four kernels through `Pump`, then every shipped demo, and the hardware demos with S2 toggled mid-run (LED must follow; data stack must not leak). Each emulator loop has a wall-clock watchdog (LED_SWITCH_DEMO_BUDGET_SECS, default 120) that prints progress every 5 s and fails with the PC and pump state instead of spinning. Run with `cargo test`; this is the gate for demo/kernel/pump regressions.
 - `src/snapshot.rs` -- Build-time snapshot capture + restore (localStorage + embedded blob). Gated by `SNAPSHOT_CACHE_ENABLED` in `src/repl.rs`; currently off pending kernel-side precompute work.
 - `asm/forth-bootstrap.s` -- Phase 1 Forth kernel (copied from sw-cor24-forth; used by tab 1's Bootstrap tier)
 - Tab 1 Interpreter tier reads `../sw-cor24-forth/forth.s` at compile time
 - Tab 2 reads `../sw-cor24-forth/forth-in-forth/kernel.s` + `core/*.fth` at compile time
 - Tab 3 reads `../sw-cor24-forth/forth-on-forthish/kernel.s` + `core/*.fth` at compile time
+- Tab 4 reads `../sw-cor24-forth/forth-from-forth/kernel.s` only: a generated image (`forth-from-forth/scripts/build-image.sh` upstream) with the core already in its dictionary, so `FFF_CORE_FILES` is empty
 - `index.html` -- Entry point with high-contrast dark theme
 - `src/debugger.css` -- Shared styling (top-tab bar, help bubble, REPL layout, debugger panels)
 - `build.rs` -- Build script (BUILD_SHA, BUILD_HOST, BUILD_TIMESTAMP)

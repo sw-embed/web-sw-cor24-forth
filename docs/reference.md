@@ -12,6 +12,8 @@ entry is `WORD  ( stack-effect )  — short description`.
 - *(all)* — available on every tab.
 - *(tab 2+3)* — forth-in-forth and forth-on-forthish only.
 - *(tab 3)* — forth-on-forthish only.
+- Tab 4 (forth-from-forth) runs the same Forth as tab 3: every *(tab 3)*
+  and *(tab 2+3)* word is there too.
 
 ## Quick index
 
@@ -55,6 +57,10 @@ UNTIL VARIABLE VER WHILE WORD WORDS WORD-BUFFER XOR `,DOCOL` `(DO)`
 - `2OVER     ( a b c d -- a b c d a b )` — copy second pair. *(tab 2+3)*
 - `PICK      ( xn … x0 u -- xn … x0 xu )` — copy the u-th item
   (0-based). *(tab 2+3)*
+- `ROLL      ( xu … x0 u -- xu-1 … x0 xu )` — move the u-th item to the
+  top (0 ROLL is a no-op, 2 ROLL is ROT). *(tab 2+3)*
+- `?DUP      ( n -- n n | 0 )` — duplicate the top only if non-zero.
+  *(tab 2+3)*
 - `DEPTH     ( -- n )` — current stack depth (does not include the
   pushed `n`). *(tab 2+3)*
 - `.S        ( -- )` — print stack non-destructively: `<depth> a b c`.
@@ -72,6 +78,8 @@ UNTIL VARIABLE VER WHILE WORD WORDS WORD-BUFFER XOR `,DOCOL` `(DO)`
 - `1-        ( n -- n-1 )` — decrement. *(tab 2+3)*
 - `NEGATE    ( n -- -n )` — two's-complement negate. *(tab 2+3)*
 - `ABS       ( n -- |n| )` — absolute value. *(tab 2+3)*
+- `MIN       ( a b -- min )` — the smaller of two. *(tab 2+3)*
+- `MAX       ( a b -- max )` — the larger of two. *(tab 2+3)*
 
 ## Logic (bitwise)
 
@@ -88,6 +96,10 @@ UNTIL VARIABLE VER WHILE WORD WORDS WORD-BUFFER XOR `,DOCOL` `(DO)`
 - `<         ( a b -- flag )` — less-than?
 - `0=        ( n -- flag )` — zero? *(tab 2+3)*
 - `0<        ( n -- flag )` — negative? *(tab 2+3)*
+- `>         ( a b -- flag )` — greater-than? *(tab 2+3)*
+- `<=        ( a b -- flag )` — less-or-equal? *(tab 2+3)*
+- `>=        ( a b -- flag )` — greater-or-equal? *(tab 2+3)*
+- `<>        ( a b -- flag )` — not equal? *(tab 2+3)*
 
 Forth flags: canonical true is `-1`, false is `0`.
 
@@ -97,6 +109,8 @@ Forth flags: canonical true is `-1`, false is `0`.
 - `R>        ( -- n ) ( R: n -- )` — pop from return stack.
 - `R@        ( -- n ) ( R: n -- n )` — copy top of return stack.
 - `I         ( -- n )` — inner-loop index (inside `DO ... LOOP`).
+- `J         ( -- n )` — outer-loop index, from inside a nested
+  `DO ... LOOP`. *(tab 2+3)*
 - `UNLOOP    ( -- )` — remove loop-control pair from return stack.
 
 ## Memory
@@ -150,6 +164,10 @@ don't type them at the REPL.
 ## Compilation
 
 - `:         ( "name" -- )` — begin a colon definition.
+- `:NONAME   ( -- xt )` — begin a nameless colon definition; `;` ends it
+  and the xt can be run with `EXECUTE`.
+- `RECURSE   ( -- )` — compile a call to the definition being compiled;
+  IMMEDIATE. *(tab 2+3)*
 - `;         ( -- )` — end; IMMEDIATE.
 - `CREATE    ( "name" -- )` — make a dictionary entry whose runtime
   pushes its PFA.
@@ -214,6 +232,8 @@ don't type them at the REPL.
 - `WORDS     ( -- )` — list all dictionary entries.
 - `SEE       ( "name" -- )` — decompile a Forth colon def. *(tab 2+3)*
 - `SEE-CFA   ( xt -- )` — decompile by CFA. *(tab 2+3)*
+- `SEE-CELL  ( cell -- )` — print a cell as SEE does: the name of the
+  word it points to, or else the number. *(tab 2+3)*
 - `DUMP-ALL  ( -- )` — list every word with its address. *(tab 2+3)*
 - `PRINT-NAME ( addr -- )` — print a dictionary entry's name.
   *(tab 2+3)*

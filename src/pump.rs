@@ -70,6 +70,10 @@ pub const POLL_LABELS: &[&str] = &[
     // six and burns a whole tick budget instead of feeding the next byte.
     "backslash_loop",
     "paren_loop",
+    // forth.s since its split into forth-core.s + forth-uart.s: every UART
+    // read goes through the layer's io_key, whose busy-wait is io_key_poll.
+    // Without it the pump never sees tab 1 idle and never feeds it input.
+    "io_key_poll",
 ];
 
 /// What one tick did.

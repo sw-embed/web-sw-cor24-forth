@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-10-23 — Tab 4: forth-from-forth
+
+- New default tab **forth-from-forth**: sw-cor24-forth's phase-4 kernel. A
+  cross-compiler written in Forth compiles the five core tiers into the
+  kernel image, so the tab sends nothing at boot. Headless, through the
+  same pump the browser uses: ready after 1 tick, where forth-on-forthish
+  needs 74 to stream and compile its core. Same demos as tab 3; every one
+  runs clean.
+- **Tab 1 fix:** forth.s now reads the UART through the layer's `io_key`
+  (since its split into forth-core.s + forth-uart.s), whose busy-wait is
+  `io_key_poll`. The pump did not know that label, never saw tab 1 idle
+  and never fed it input. Added to `POLL_LABELS`.
+- **Test watchdog:** every emulator loop in `tests/led_switch_demo.rs` has
+  a wall-clock budget and prints progress every 5 s. The missing label
+  above had made the suite spin for minutes silently; now it fails in
+  60 s naming forth.s and the PC.
+- `KNOWN_BROKEN` is empty: upstream fixed forth-on-forthish's Forth NUMBER
+  (negative literals), which broke five tab-3 demos.
+- docs/reference.md documents the 12 words the help test flagged
+  (`:NONAME <= <> > >= ?DUP J MAX MIN RECURSE ROLL SEE-CELL`); `cargo test`
+  is fully green.
+
 ## 2026-10-21 — Tab 1 (forth.s) demos start in <1 s; pump drives all tabs
 
 After the demo fix shipped, "Loop Switch LED" worked on tabs 2 and 3 but

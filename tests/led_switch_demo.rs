@@ -21,10 +21,11 @@
 use cor24_assembler::Assembler;
 use cor24_emulator::EmulatorCore;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use web_sw_cor24_forth::config::ForthTier;
 use web_sw_cor24_forth::demos::{
-    Demo, FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC, FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC,
-    FORTH_S_DEMOS,
+    Demo, FFF_CORE_FILES, FFF_DEMOS, FFF_KERNEL_SRC, FIF_CORE_FILES, FIF_DEMOS, FIF_KERNEL_SRC,
+    FOF_CORE_FILES, FOF_DEMOS, FOF_KERNEL_SRC, FORTH_S_DEMOS,
 };
 use web_sw_cor24_forth::pump::Pump;
 
@@ -49,6 +50,8 @@ const MAX_START_TICKS: usize = 200;
 struct Booted {
     emu: EmulatorCore,
     pump: Pump,
+    /// Ticks the bootstrap took (the browser runs one tick per timer).
+    boot_ticks: usize,
 }
 
 struct Kernel {
@@ -81,7 +84,79 @@ static FOF: Kernel = Kernel {
     cell: OnceLock::new(),
 };
 
-const ALL: [&Kernel; 3] = [&FORTH_S, &FIF, &FOF];
+static FFF: Kernel = Kernel {
+    name: "forth-from-forth",
+    kernel_src: FFF_KERNEL_SRC,
+    core_files: FFF_CORE_FILES,
+    demos: FFF_DEMOS,
+    cell: OnceLock::new(),
+};
+
+const ALL: [&Kernel; 4] = [&FORTH_S, &FIF, &FOF, &FFF];
+
+/// Wall-clock budget for any one emulator loop (a boot, or one demo run).
+/// Tick limits alone are not a bound: a tick may run 600k instructions, so a
+/// kernel that never goes idle could spin for many minutes. Override with
+/// LED_SWITCH_DEMO_BUDGET_SECS.
+fn loop_budget() -> Duration {
+    let secs = std::env::var("LED_SWITCH_DEMO_BUDGET_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120);
+    Duration::from_secs(secs)
+}
+
+/// Progress and deadline for one emulator loop. Prints a line every 5 s
+/// (visible with --nocapture, and in the failure output) and panics with
+/// the kernel state once the budget is spent.
+struct Watchdog {
+    what: String,
+    start: Instant,
+    last: Instant,
+    budget: Duration,
+}
+
+impl Watchdog {
+    fn new(what: impl Into<String>) -> Self {
+        let now = Instant::now();
+        Watchdog {
+            what: what.into(),
+            start: now,
+            last: now,
+            budget: loop_budget(),
+        }
+    }
+
+    fn check(&mut self, b: &Booted, ticks: usize) {
+        let now = Instant::now();
+        let snap = b.emu.snapshot();
+        if now.duration_since(self.last) >= Duration::from_secs(5) {
+            self.last = now;
+            eprintln!(
+                "[{}] {:.0}s: {ticks} ticks, {} instructions, pc={:#08x}, queue={}, idle={}",
+                self.what,
+                now.duration_since(self.start).as_secs_f64(),
+                b.emu.instructions_count(),
+                snap.pc,
+                b.pump.queue.len(),
+                b.pump.is_idle(snap.pc)
+            );
+        }
+        if now.duration_since(self.start) > self.budget {
+            panic!(
+                "[{}] gave up after {:?}: {ticks} ticks, {} instructions, pc={:#08x}, \
+                 queue={}, idle={} -- a kernel that never reaches a POLL_LABELS loop \
+                 spins here",
+                self.what,
+                self.budget,
+                b.emu.instructions_count(),
+                snap.pc,
+                b.pump.queue.len(),
+                b.pump.is_idle(snap.pc)
+            );
+        }
+    }
+}
 
 /// Mirror of `ForthRepl::load_binary` / `Debugger::load_binary`: assemble,
 /// load, queue the core files, run until the kernel idles with the queue
@@ -109,12 +184,19 @@ fn boot(k: &Kernel) -> Booted {
     emu.set_pc(0);
     pump.queue_core_files(k.core_files);
     emu.resume();
-    let mut b = Booted { emu, pump };
-    for _ in 0..100_000 {
+    let mut b = Booted {
+        emu,
+        pump,
+        boot_ticks: 0,
+    };
+    let mut dog = Watchdog::new(format!("{} boot", k.name));
+    for n in 1..=100_000 {
+        dog.check(&b, n);
         let out = tick(&mut b);
         assert!(!out.halted, "{}: CPU halted during bootstrap", k.name);
         if b.pump.booted {
             b.emu.clear_uart_output();
+            b.boot_ticks = n;
             return b;
         }
     }
@@ -168,7 +250,9 @@ fn try_run_until(
     max: usize,
     mut pred: impl FnMut(&Booted) -> bool,
 ) -> Result<Option<usize>, String> {
+    let mut dog = Watchdog::new("run");
     for i in 0..max {
+        dog.check(b, i);
         let out = tick(b);
         if out.halted {
             return Err(format!("CPU halted at tick {i}: {:?}", out.reason));
@@ -211,6 +295,20 @@ fn every_kernel_boots_to_the_prompt() {
         let b = booted(k);
         assert!(b.pump.booted && b.pump.waiting_for_input, "{}", k.name);
     }
+}
+
+/// forth-from-forth's point: the core is in the image, so it must be ready
+/// almost at once, where forth-on-forthish compiles five tiers first.
+#[test]
+fn image_kernel_boots_far_faster_than_streaming_the_core() {
+    let fff = booted(&FFF).boot_ticks;
+    let fof = booted(&FOF).boot_ticks;
+    eprintln!("boot ticks: forth-from-forth {fff}, forth-on-forthish {fof}");
+    assert!(fff <= 3, "forth-from-forth took {fff} ticks to boot");
+    assert!(
+        fff * 20 <= fof,
+        "forth-from-forth {fff} ticks vs forth-on-forthish {fof}"
+    );
 }
 
 /// `02-led.fth`: the `ON` / `OFF` words it defines reach the LED register.
@@ -348,36 +446,9 @@ fn loop_switch_led_demo_tracks_s2_without_leaking() {
 /// below requires each of these to *still* fail, so the list cannot go
 /// stale: fix the kernel or the demo upstream, then delete the entry.
 const KNOWN_BROKEN: &[(&str, &str, &str)] = &[
-    // One root cause for all four: forth-on-forthish's Forth-level NUMBER
-    // does not accept a leading '-' (`-1 .` prints `?`). forth.s and
-    // forth-in-forth run every one of these demos clean.
-    (
-        "forth-on-forthish",
-        "CONSTANT",
-        "`-65280 CONSTANT UART-DATA` fails on the negative literal; later \
-         `UART-DATA .` prints garbage and `UART-STAT .` halts the CPU",
-    ),
-    (
-        "forth-on-forthish",
-        "DO LOOP",
-        "the `-1` sentinel line in FIND-5 prints `?`; the rest of the demo runs",
-    ),
-    (
-        "forth-on-forthish",
-        "IF ELSE",
-        "`: DEMO -1 IF ...` prints `?` on the negative literal",
-    ),
-    (
-        "forth-on-forthish",
-        "IF THEN",
-        "`: T -1 IF ...` prints `?` on the negative literal",
-    ),
-    (
-        "forth-on-forthish",
-        "Self Test",
-        "the arithmetic line's negative literal prints `?` and leaves garbage; \
-         the CPU halts before the end of the file",
-    ),
+    // Empty since sw-cor24-forth fixed forth-on-forthish's Forth NUMBER
+    // (negative literals) on 2026-10-23; that one bug broke CONSTANT,
+    // DO LOOP, IF ELSE, IF THEN and Self Test on tab 3.
 ];
 
 /// Every demo in every tab's list must at least compile and run to the
