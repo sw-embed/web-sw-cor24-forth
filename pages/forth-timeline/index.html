@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>A timeline of Forth</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="A timeline of Forth, from the IBM 1130 to my own Forths, with live demos.">
+<meta name="theme-color" content="#f3e9d2">
+<style>
+  :root { --paper: #f3e9d2; --ink: #3b2b1d; --soft: #8a7356; --box: #fbf6ea;
+    --hand: "Bradley Hand", "Segoe Print", "Comic Neue", cursive; }
+  body { margin: 0; background: var(--paper); color: var(--ink);
+    font-family: Georgia, "Times New Roman", serif; }
+  header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: .8rem 1.25rem 0; }
+  header h1 { font-size: 1.5rem; font-weight: normal; margin: 0; }
+  header a { color: inherit; }
+  .legend { margin-left: auto; max-width: 42rem; padding: .35rem .7rem; font-size: 1.02rem; line-height: 1.35;
+    border: 1px solid var(--soft); border-radius: 8px; background: var(--box); }
+  .legend b { font-family: var(--hand); }
+  .go { position: relative; font: inherit; font-size: 2.6rem; line-height: 1; color: var(--ink);
+    background: none; border: 0; padding: 0 .2rem; cursor: pointer; }
+  .go:hover, .go:focus-visible { color: #9a5b1e; }
+  .home { position: relative; text-decoration: none; }
+  .home:hover, .home:focus-visible { text-decoration: underline; }
+  .go::after, .home::after { content: attr(data-tip); position: absolute; top: 110%; z-index: 5; white-space: nowrap;
+    font-size: 1.4rem; font-weight: normal; padding: .35rem .7rem; border-radius: .4rem; color: #fff;
+    background: rgb(0 0 0 / .72); opacity: 0; pointer-events: none; }
+  .go[data-go="-1"]::after, .home::after { left: 0; }
+  .go[data-go="1"]::after { left: 0; }
+  .go:hover::after, .go:focus-visible::after, .home:hover::after, .home:focus-visible::after { opacity: 1; }
+  .strip { overflow-x: auto; overflow-y: hidden; outline: none; }
+  .track { position: relative; margin-top: 10px; }
+  .line { position: absolute; height: 3px; background: var(--ink); transform: translateY(-1px); }
+  .line::after { content: ""; position: absolute; right: -14px; top: -7px;
+    border: 8px solid transparent; border-left: 14px solid var(--ink); }
+  .tick { position: absolute; width: 1px; height: 10px; background: var(--soft); transform: translate(0, -5px); }
+  .tick.fifth { width: 3px; height: 22px; background: var(--ink); transform: translate(-1px, -11px); }
+  .year { position: absolute; z-index: 1; transform: translateX(-50%); font-size: 1.6rem;
+    font-weight: bold; line-height: 1.1; padding: 0 6px; background: var(--paper); }
+  .beyond { position: absolute; font-family: var(--hand); font-size: 1.32rem; white-space: nowrap; }
+  .leader { position: absolute; z-index: 0; overflow: visible; pointer-events: none; }
+  .leader polyline { fill: none; stroke: var(--soft); stroke-width: 2; }
+  /* Each tone a color and a dash pattern, so a reader who cannot tell
+     the colors apart can still follow a leader: solid, dashed, dotted,
+     dash-dot. */
+  .leader.tone-1 polyline { stroke: #4f6f8f; stroke-dasharray: 8 5; }
+  .leader.tone-2 polyline { stroke: #9a4b3c; stroke-dasharray: 2 4; stroke-linecap: round; }
+  .leader.tone-3 polyline { stroke: #4e7a55; stroke-dasharray: 9 4 2 4; }
+  .dot { position: absolute; width: 9px; height: 9px; border-radius: 50%;
+    background: var(--ink); transform: translate(-4px, -4px); }
+  .callout { position: absolute; z-index: 2; box-sizing: border-box; padding: 8px 10px;
+    background: var(--box); border: 2px solid var(--ink); border-radius: 10px;
+    box-shadow: 2px 3px 0 rgb(59 43 29 / .18); }
+  .callout.note { border-width: 1px; border-color: var(--soft); background: transparent; box-shadow: none; }
+  .callout a { color: inherit; text-decoration: none; display: block; height: 100%; }
+  .callout a:hover .when { text-decoration: underline; }
+  .callout img, .callout .tbd { display: block; width: 100%; height: 140px;
+    object-fit: contain; background: #c3c7cc; border-radius: 4px; }
+  .callout .tbd { display: grid; place-content: center; text-align: center; font-size: 1.38rem; color: #2b2118; }
+  .callout p { margin: 3px 0 0; line-height: 1.2; }
+  .callout .shot { position: relative; }
+  .callout .shot:empty { display: none; }
+  .callout .shot[data-tip]::after { content: attr(data-tip); position: absolute; inset: 0;
+    display: grid; place-content: center; text-align: center; padding: .5rem; box-sizing: border-box;
+    font-size: 1.62rem; line-height: 1.25; color: #fff; background: rgb(0 0 0 / .5);
+    border-radius: 4px; opacity: 0; pointer-events: none; }
+  .callout:hover .shot::after, .callout a:focus-visible .shot::after { opacity: 1; }
+  .demo { font-size: 1.62rem; font-weight: bold; }
+  .when { font-family: var(--hand); font-size: 1.5rem; font-weight: bold; }
+  .text { font-size: 1.38rem; }
+  .callout.note .when { font-size: 1.58rem; }
+  .callout.note .text { font-size: 1.46rem; }
+  .callout.mine { border-color: #2f5d3a; }
+  footer { padding: .2rem 1.25rem .4rem; font-size: .96rem; color: var(--soft); }
+  footer p { margin: .15rem 0; }
+  footer a { color: inherit; }
+</style>
+<header>
+  <button class="go" data-go="-1" data-tip="Earlier: the languages before Forth" aria-label="Scroll to earlier years">↞</button>
+  <h1><a class="home" href="./" data-tip="Back to 1970">A timeline of Forth</a></h1>
+  <button class="go" data-go="1" data-tip="Later: on to today, and my own Forths" aria-label="Scroll to later years">↠</button>
+  <aside class="legend" aria-label="My Forths">
+    <b>My Forths, 2026:</b>
+    COR24 Forth in four phases, from all assembly to a kernel that rebuilds itself ·
+    Forth in SWTOS · proto-forth-wasm · reva-fork
+  </aside>
+</header>
+<div id="timeline"></div>
+<footer>
+  <p class="hint">Scroll sideways, or turn the wheel. To the left are the languages before Forth; to the right, the years on to today, and my own Forths, each with a live demo. The title brings you back to 1970.</p>
+  <p class="colophon">Copyright &copy; 2026 Michael A Wright
+    <span aria-hidden="true">·</span> MIT License
+    <span aria-hidden="true">·</span> <a href="https://github.com/sw-embed/sw-cor24-forth">sw-cor24-forth</a> · timeline from <a href="https://github.com/sw-vibe-coding/sw-apl">sw-apl</a></p>
+</footer>
+<script type="module">
+  import init from "./timeline/forth_timeline_web.js";
+  init();
+  // The arrows by the title: most of a view earlier or later, smoothly.
+  for (const go of document.querySelectorAll(".go")) {
+    go.addEventListener("click", () => document.querySelector(".strip")
+      ?.scrollBy({ left: Number(go.dataset.go) * innerWidth * 0.8, behavior: "smooth" }));
+  }
+</script>

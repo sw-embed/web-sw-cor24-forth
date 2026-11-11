@@ -12,7 +12,8 @@ cd "$PROJECT_DIR"
 mkdir -p pages
 touch pages/.nojekyll
 trunk build --release --public-url /web-sw-cor24-forth/
-rsync -a --delete --exclude='.nojekyll' dist/ pages/
+# pages/forth-timeline/ is not Trunk's: scripts/update-forth-timeline.sh copies it in.
+rsync -a --delete --exclude='.nojekyll' --exclude='forth-timeline/' dist/ pages/
 
 echo "=== Done ==="
 echo "Pages built in: $PROJECT_DIR/pages/"

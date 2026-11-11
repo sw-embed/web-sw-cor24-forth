@@ -45,7 +45,8 @@ cargo test                     # Unit tests + headless kernel/demo tests (tests/
 - `index.html` -- Entry point with high-contrast dark theme
 - `src/debugger.css` -- Shared styling (top-tab bar, help bubble, REPL layout, debugger panels)
 - `build.rs` -- Build script (BUILD_SHA, BUILD_HOST, BUILD_TIMESTAMP)
-- `scripts/build-pages.sh` -- Release build to pages/ for GitHub Pages
+- `scripts/build-pages.sh` -- Release build to pages/ for GitHub Pages (leaves pages/forth-timeline/ alone)
+- `scripts/update-forth-timeline.sh` -- Copies the Forth timeline (built in ../sw-forth-timeline, forked from sw-apl's) into pages/forth-timeline/, published at /web-sw-cor24-forth/forth-timeline/
 - `.github/workflows/pages.yml` -- Deploy pages/ on push to main
 
 ### COR24 Register Allocation (from sw-cor24-forth)
