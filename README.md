@@ -4,7 +4,7 @@ Web UI for [sw-cor24-forth](https://github.com/sw-embed/sw-cor24-forth) on COR24
 
 Type Forth commands, step through threaded code, inspect stacks and registers, and toggle hardware I/O — all in the browser.
 
-**[Live Demo](https://sw-embed.github.io/web-sw-cor24-forth/)**
+**[Live Demo](https://sw-embed.github.io/web-sw-cor24-forth/)** · **[Forth Timeline](https://sw-embed.github.io/web-sw-cor24-forth/forth-timeline/)**: from the IBM 1130 to these Forths, with live demos
 
 Part of the [Software Wrighter COR24 Tools Project](https://sw-embed.github.io/web-sw-cor24-demos/#/).
 
@@ -87,6 +87,7 @@ cargo fmt --all                 # format
 
 ## Links
 
+- Forth Timeline: [from the IBM 1130 to today](https://sw-embed.github.io/web-sw-cor24-forth/forth-timeline/)
 - Blog: [Software Wrighter Lab](https://software-wrighter-lab.github.io/)
 - Discord: [Join the community](https://discord.com/invite/Ctzk5uHggZ)
 - YouTube: [Software Wrighter](https://www.youtube.com/@SoftwareWrighter)
